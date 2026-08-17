@@ -14,6 +14,7 @@ function defaultStatus() {
     path: "",
     isStream: false,
     durationSec: 0,
+    positionSec: 0,
     artist: "",
     album: "",
     volumeDb: 0,
@@ -68,6 +69,7 @@ function parseStatus(raw) {
   out.eqFlat = bandsAreFlat(data.eq_bands)
 
   out.durationSec = numberOr(data.duration, 0)
+  out.positionSec = numberOr(data.position, 0)
 
   var track = data.track
   if (track && typeof track === "object") {
@@ -218,6 +220,38 @@ function parsePlaylists(raw) {
     var name = trim(head.slice(0, cut))
     if (name.length === 0 || !isFinite(count)) continue
     out.push({ name: name, count: count })
+  }
+  return out
+}
+
+// cliamp only accepts these output rates, so a native rate outside the set cannot be
+// played natively at all and must not be chased. 88.2 and 176.4 kHz are not in it.
+var SUPPORTED_OUTPUT_RATES = [22050, 44100, 48000, 96000, 192000]
+
+function isSupportedOutputRate(rate) {
+  var value = numberOr(rate, 0)
+  for (var i = 0; i < SUPPORTED_OUTPUT_RATES.length; i++) {
+    if (SUPPORTED_OUTPUT_RATES[i] === value) return true
+  }
+  return false
+}
+
+// Sample input, one NDJSON frame from the bands command:
+// {"ok":true,"visualizer":"Bars","bands":[0.93,0.81,...]}
+function parseBands(raw) {
+  var out = []
+  var text = String(raw || "").trim()
+  if (text.length === 0) return out
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return out
+  }
+  if (!data || data.ok !== true || !data.bands || data.bands.length === undefined) return out
+  for (var i = 0; i < data.bands.length; i++) {
+    var v = numberOr(data.bands[i], 0)
+    out.push(v < 0 ? 0 : (v > 1 ? 1 : v))
   }
   return out
 }

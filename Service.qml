@@ -20,29 +20,46 @@ Item {
 
   // Bound by cliamp's own bus name, never to whichever player happens to be active,
   // because Chromium and others register MPRIS too and would otherwise drive this panel.
-  readonly property var player: findCliampPlayer()
+  // Re-resolved on every player list change. A function call binding does not reliably
+  // re-evaluate when the daemon restarts, which strands the panel on a dead object.
+  property var player: null
 
-  readonly property bool running: player !== null
+  function refreshPlayer() { player = findCliampPlayer() }
+
+  Connections {
+    target: Mpris.players
+    ignoreUnknownSignals: true
+    function onValuesChanged() { root.refreshPlayer() }
+  }
+
+  Component.onCompleted: refreshPlayer()
+
+  // cliamp's own status is the truth. MPRIS only fills gaps and provides seeking, so a
+  // stale or missing player object can no longer freeze the panel.
+  readonly property bool running: status.ok === true || player !== null
   readonly property bool hasTrack: running && (title.length > 0 || artist.length > 0)
-  readonly property bool isPlaying: running && player.isPlaying === true
-  readonly property string title: running ? String(player.trackTitle || "") : ""
-  readonly property string artist: running ? String(player.trackArtist || status.artist || "") : ""
-  readonly property string album: running ? String(player.trackAlbum || status.album || "") : ""
+  readonly property bool isPlaying: status.ok === true
+    ? status.state === "playing"
+    : (player !== null && player.isPlaying === true)
+  readonly property string title: String(status.title || (player ? player.trackTitle : "") || "")
+  readonly property string artist: String(status.artist || (player ? player.trackArtist : "") || "")
+  readonly property string album: String(status.album || (player ? player.trackAlbum : "") || "")
 
   // cliamp publishes no mpris:artUrl for anything, local or remote, so the cover is
   // derived from the Subsonic stream URL it does publish. The MPRIS value is still
   // preferred in case a future release starts sending one.
   readonly property string artUrl: {
     if (!running) return ""
-    var fromMpris = safeArtUrl(player.trackArtUrl)
+    var fromMpris = player ? safeArtUrl(player.trackArtUrl) : ""
     if (fromMpris.length > 0) return fromMpris
     return safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
   }
   property int artSizePx: 300
 
   readonly property real lengthSec: {
-    if (running && player.lengthSupported && Number(player.length || 0) > 0) return Number(player.length)
-    return Number(status.durationSec || 0)
+    if (status.durationSec > 0) return status.durationSec
+    if (player && player.lengthSupported) return Number(player.length || 0)
+    return 0
   }
 
   // Navidrome tracks carry stream:true exactly as radio does, so a known duration is
@@ -89,9 +106,20 @@ Item {
     return ""
   }
 
-  function playPause() { if (running) player.togglePlaying() }
-  function next() { if (running) player.next() }
-  function previous() { if (running) player.previous() }
+  function playPause() {
+    if (send('{"cmd":"toggle"}')) { settleTimer.restart(); return }
+    if (running) player.togglePlaying()
+  }
+
+  function next() {
+    if (send('{"cmd":"next"}')) { settleTimer.restart(); return }
+    if (running) player.next()
+  }
+
+  function previous() {
+    if (send('{"cmd":"prev"}')) { settleTimer.restart(); return }
+    if (running) player.previous()
+  }
 
   // cliamp's MPRIS exposes a relative Seek and no SetPosition, so an absolute move
   // is expressed as a delta from where the panel believes the position to be.
@@ -104,35 +132,72 @@ Item {
 
   function seekBy(deltaSec) { seekTo(positionSec + Number(deltaSec || 0)) }
 
+  // cliamp speaks newline delimited JSON on its own socket, so status needs no
+  // subprocess at all. One connection replaces a spawn every couple of seconds.
+  readonly property string socketPath: (Quickshell.env("HOME") || "") + "/.config/cliamp/cliamp.sock"
+
   function refreshStatus() {
-    if (statusProcess.running) return
-    statusProcess.command = [cliampPath, "status", "--json"]
-    statusProcess.running = true
+    if (!ipc.connected) return
+    ipc.write('{"cmd":"status"}\n')
+    ipc.flush()
+  }
+
+  // Every verb the docs define on the socket goes the same way.
+  function send(payload) {
+    if (!ipc.connected) return false
+    ipc.write(payload + "\n")
+    ipc.flush()
+    return true
   }
 
   function syncPosition() {
-    positionSec = running && player.positionSupported ? Number(player.position || 0) : 0
+    if (status.ok === true) positionSec = Number(status.positionSec || 0)
+    else if (player && player.positionSupported) positionSec = Number(player.position || 0)
     if (panelOpen) refreshStatus()
   }
 
-  Process {
-    id: statusProcess
-    command: []
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var parsed = Model.parseStatus(text)
+  Socket {
+    id: ipc
+    path: root.socketPath
+    connected: true
+
+    parser: SplitParser {
+      splitMarker: "\n"
+      onRead: function (line) {
+        var parsed = Model.parseStatus(String(line || ""))
         root.status = parsed
         root.lastError = parsed.ok ? "" : parsed.lastError
+        // The feed carries position, so the local tick only fills the gaps between polls.
+        if (parsed.ok) root.positionSec = Number(parsed.positionSec || 0)
       }
     }
+  }
+
+  // cliamp's own 10 band spectrum, the same feed its first-party widget draws. visstream
+  // holds one IPC connection open and emits a frame per tick, which the docs give as the
+  // way to consume it from a UI toolkit. It runs only while the popup is open and
+  // playing, so a shut panel costs nothing.
+  property var bands: []
+
+  Process {
+    id: visProcess
+    command: [root.cliampPath, "visstream", "--fps", "20"]
+    running: root.panelOpen && root.isPlaying
+    stdout: SplitParser {
+      splitMarker: "\n"
+      onRead: function (line) {
+        var frame = Model.parseBands(line)
+        if (frame.length > 0) root.bands = frame
+      }
+    }
+    onRunningChanged: if (!running) root.bands = []
   }
 
   Timer {
     id: statusTimer
     interval: root.statusIntervalMs
     repeat: true
-    running: root.panelOpen && root.running
+    running: root.panelOpen && ipc.connected
     triggeredOnStart: true
     onTriggered: root.refreshStatus()
   }
@@ -379,7 +444,12 @@ Item {
   // Loading a saved playlist is the only way a headless daemon can reach a Navidrome
   // library: the playlist keeps resolved stream URLs, and the browser is TUI only.
   function loadPlaylist(name) {
-    if (actionProcess.running || !name) return
+    if (!name) return
+    if (send('{"cmd":"load","playlist":' + JSON.stringify(String(name)) + '}')) {
+      playAfterLoad.restart()
+      return
+    }
+    if (actionProcess.running) return
     actionProcess.command = [cliampPath, "load", String(name)]
     actionProcess.running = true
     playAfterLoad.restart()
@@ -389,7 +459,7 @@ Item {
     id: playAfterLoad
     interval: 700
     repeat: false
-    onTriggered: if (root.running) root.player.play()
+    onTriggered: if (!root.send('{"cmd":"play"}') && root.running) root.player.play()
   }
 
   function setDevice(name) {
@@ -455,6 +525,9 @@ Item {
     if (nativeRateProcess.running) return
     if (sourceRate <= 0 || streamRate <= 0) return
     if (Math.abs(sourceRate - streamRate) <= 1) { attemptedNativeRate = 0; return }
+    // 88.2 and 176.4 kHz are not accepted output rates, so relaunching would land on
+    // the default and gap the audio for nothing.
+    if (!Model.isSupportedOutputRate(sourceRate)) return
     if (attemptedNativeRate === sourceRate) return
     attemptedNativeRate = sourceRate
     nativeRateProcess.command = [nativeRateHelper, String(sourceRate)]

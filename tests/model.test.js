@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -47,6 +47,7 @@ check("navidrome title", n.title, "Billie (Loving Arms)")
 check("navidrome artist", n.artist, "Fred again..")
 check("navidrome album", n.album, "Actual Life 2")
 check("navidrome duration", n.durationSec, 217)
+check("navidrome position", n.positionSec, 37.49)
 check("navidrome is flagged a stream", n.isStream, true)
 check("navidrome queue depth", n.total, 44)
 
@@ -111,6 +112,19 @@ check("empty playlist output", Model.parsePlaylists(""), [])
 
 // cliamp outputs a fixed rate, so a known source rate is required before the full
 // claim is made. Measured: a 48 kHz file leaves cliamp at 44100 with default config.
+// cliamp accepts only these output rates, so 88.2 can never be played natively.
+check("44.1 is a supported output rate", Model.isSupportedOutputRate(44100), true)
+check("96 is supported", Model.isSupportedOutputRate(96000), true)
+check("88.2 is not", Model.isSupportedOutputRate(88200), false)
+check("zero is not", Model.isSupportedOutputRate(0), false)
+
+// One NDJSON frame from {"cmd":"bands"}, byte for byte from the docs.
+check("bands parse", Model.parseBands('{"ok":true,"visualizer":"Bars","bands":[0.93,0.81,0.62]}'), [0.93, 0.81, 0.62])
+check("bands clamp above one", Model.parseBands('{"ok":true,"bands":[1.4,-0.2]}'), [1, 0])
+check("a failed frame yields nothing", Model.parseBands('{"ok":false,"error":"x"}'), [])
+check("garbage yields nothing", Model.parseBands("not json"), [])
+check("empty yields nothing", Model.parseBands(""), [])
+
 check("bit-perfect needs the source rate to agree",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })

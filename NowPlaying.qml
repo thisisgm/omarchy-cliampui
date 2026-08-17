@@ -94,32 +94,77 @@ Column {
         elide: Text.ElideRight
       }
 
-      // A fixed height box, because a bare Row sizes to its tallest child and every bar
-      // movement would then shove the whole panel up and down.
+      // cliamp's own 10 band spectrum over IPC, drawn Winamp 2 style as stacked LED
+      // segments with a falling peak cap. Fixed height, because a bare Row sizes to its
+      // tallest child and every frame would then shove the whole panel up and down.
       Item {
+        id: analyzer
         width: parent.width
         height: root.meterHeight
         visible: root.hasTrack
+
+        readonly property var bands: root.service ? root.service.bands : []
+        readonly property int segments: 7
+        readonly property real segmentGap: 1
 
         Row {
           anchors.left: parent.left
           anchors.bottom: parent.bottom
           height: parent.height
-          spacing: 2
+          spacing: 3
 
           Repeater {
-            model: root.meterBars
+            model: 10
 
-            Rectangle {
-              width: 2
-              radius: 1
-              color: Color.accent
-              opacity: 0.9
-              // Each bar leans on a slightly different slice of the level, so the row
-              // moves as a meter rather than as one block rising and falling together.
-              height: Math.max(2, root.meterHeight * Math.max(0, Math.min(1, peakMonitor.peak * (1.6 - index * 0.05))))
-              anchors.bottom: parent.bottom
-              Behavior on height { NumberAnimation { duration: 90 } }
+            Item {
+              id: bar
+              width: 6
+              height: analyzer.height
+
+              readonly property real level: index < analyzer.bands.length ? analyzer.bands[index] : 0
+              property real peak: 0
+
+              // The cap hangs at the highest recent level and falls back under gravity,
+              // which is what makes a Winamp analyzer read as one.
+              onLevelChanged: if (level > peak) peak = level
+
+              Timer {
+                interval: 90
+                repeat: true
+                running: analyzer.visible
+                onTriggered: bar.peak = Math.max(bar.level, bar.peak - 0.06)
+              }
+
+              Column {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                spacing: analyzer.segmentGap
+
+                Repeater {
+                  model: analyzer.segments
+
+                  Rectangle {
+                    width: bar.width
+                    height: (analyzer.height - (analyzer.segments - 1) * analyzer.segmentGap) / analyzer.segments
+                    radius: 1
+                    // Segments light from the bottom up, so the column reads as a level.
+                    readonly property real threshold: (analyzer.segments - index) / analyzer.segments
+                    color: Color.accent
+                    opacity: bar.level >= threshold ? 0.95 : 0.12
+                    Behavior on opacity { NumberAnimation { duration: 70 } }
+                  }
+                }
+              }
+
+              Rectangle {
+                width: bar.width
+                height: 2
+                radius: 1
+                color: root.foreground
+                opacity: bar.peak > 0.02 ? 0.9 : 0
+                y: Math.max(0, analyzer.height - 2 - bar.peak * (analyzer.height - 2))
+                Behavior on y { NumberAnimation { duration: 80 } }
+              }
             }
           }
         }
