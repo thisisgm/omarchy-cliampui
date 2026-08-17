@@ -13,6 +13,9 @@ function defaultStatus() {
     title: "",
     path: "",
     isStream: false,
+    durationSec: 0,
+    artist: "",
+    album: "",
     volumeDb: 0,
     total: 0,
     index: -1,
@@ -62,11 +65,16 @@ function parseStatus(raw) {
   out.repeat = String(data.repeat || "Off")
   out.visualizer = String(data.visualizer || "")
 
+  out.durationSec = numberOr(data.duration, 0)
+
   var track = data.track
   if (track && typeof track === "object") {
     out.title = String(track.title || "")
     out.path = String(track.path || "")
+    out.artist = String(track.artist || "")
+    out.album = String(track.album || "")
     out.isStream = track.stream === true
+    if (out.durationSec <= 0) out.durationSec = numberOr(track.duration_secs, 0)
   }
   return out
 }
@@ -116,6 +124,43 @@ function parseSinkAvailability(raw) {
     if (parts.length >= 2) next[parts[0]] = parts[1] !== "0"
   }
   return next
+}
+
+// Sample input, the path cliamp reports for a Navidrome track:
+// https://host/rest/stream?c=cliamp&f=json&format=raw&id=XXX&s=SALT&t=TOKEN&u=USER&v=1.0.0
+// The same salted token already authorises cover art, so the panel can show artwork
+// without ever being told a password. cliamp publishes no art of its own.
+function coverArtUrlFromStreamPath(path, size) {
+  var text = String(path || "")
+  var cut = text.indexOf("?")
+  if (cut < 0) return ""
+  var base = text.slice(0, cut)
+  if (base.indexOf("https://") !== 0) return ""
+  var marker = "/rest/stream"
+  if (base.slice(-marker.length) !== marker) return ""
+
+  var keep = ["id", "u", "t", "s", "c", "v"]
+  var parts = text.slice(cut + 1).split("&")
+  var out = []
+  for (var i = 0; i < parts.length; i++) {
+    var eq = parts[i].indexOf("=")
+    if (eq < 0) continue
+    var key = parts[i].slice(0, eq)
+    for (var j = 0; j < keep.length; j++) {
+      if (key === keep[j]) { out.push(parts[i]); break }
+    }
+  }
+  if (out.length === 0) return ""
+  out.push("size=" + (size > 0 ? size : 300))
+  return base.slice(0, base.length - marker.length) + "/rest/getCoverArt?" + out.join("&")
+}
+
+// cliamp asks Navidrome for format=raw, so its absence on a Subsonic stream means
+// the server re-encoded the file before sending it.
+function transcodedFromPath(path) {
+  var text = String(path || "")
+  if (text.indexOf("/rest/stream") < 0) return false
+  return text.indexOf("format=raw") < 0
 }
 
 function formatRate(hz) {

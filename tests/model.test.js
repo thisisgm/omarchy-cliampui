@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, coverArtUrlFromStreamPath, transcodedFromPath, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -36,6 +36,35 @@ check("local title", l.title, "probe441")
 check("local is not a stream", l.isStream, false)
 check("local keeps the fractional dB", l.volumeDb, -6.041199826559248)
 check("local state", l.state, "playing")
+
+// Byte for byte from a real Navidrome track, tokens replaced. Note stream:true is set
+// for library tracks as well as radio, so it cannot be the seekability test.
+const nav = '{"ok":true,"state":"playing","track":{"title":"Billie (Loving Arms)","artist":"Fred again..","album":"Actual Life 2","genre":"Electronic","path":"https://music.example.com/rest/stream?c=cliamp&f=json&format=raw&id=rrH30XR3&s=SALT&t=TOKEN&u=USER&v=1.0.0","year":2021,"track_number":13,"duration_secs":217,"index":40,"stream":true},"position":37.49,"duration":217,"index":40,"total":44,"shuffle":false,"repeat":"Off"}'
+
+const n = Model.parseStatus(nav)
+check("navidrome parses", n.ok, true)
+check("navidrome title", n.title, "Billie (Loving Arms)")
+check("navidrome artist", n.artist, "Fred again..")
+check("navidrome album", n.album, "Actual Life 2")
+check("navidrome duration", n.durationSec, 217)
+check("navidrome is flagged a stream", n.isStream, true)
+check("navidrome queue depth", n.total, 44)
+
+// A library track has a duration, radio does not, which is the real seekability test.
+check("radio has no duration", Model.parseStatus(radio).durationSec, 0)
+
+check("cover art is derived from the stream url",
+  Model.coverArtUrlFromStreamPath(n.path, 300),
+  "https://music.example.com/rest/getCoverArt?c=cliamp&id=rrH30XR3&s=SALT&t=TOKEN&u=USER&v=1.0.0&size=300")
+check("cover art needs a stream url", Model.coverArtUrlFromStreamPath("http://radio.example/stream", 300), "")
+check("cover art refuses plaintext", Model.coverArtUrlFromStreamPath("http://music.example.com/rest/stream?id=1&u=a&t=b&s=c", 300), "")
+check("cover art of a local file", Model.coverArtUrlFromStreamPath("/tmp/x.flac", 300), "")
+check("cover art of nothing", Model.coverArtUrlFromStreamPath("", 300), "")
+
+check("format=raw is not transcoded", Model.transcodedFromPath(n.path), false)
+check("a missing format=raw is transcoded",
+  Model.transcodedFromPath("https://music.example.com/rest/stream?id=1&format=mp3"), true)
+check("a local file is not transcoded", Model.transcodedFromPath("/tmp/x.flac"), false)
 
 // A daemon with nothing loaded omits track entirely and reports index -1.
 const empty = Model.parseStatus('{"ok":true,"state":"stopped","volume":-30,"index":-1,"shuffle":false,"repeat":"Off","mono":false,"speed":1}')

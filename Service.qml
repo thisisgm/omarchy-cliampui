@@ -26,11 +26,28 @@ Item {
   readonly property bool hasTrack: running && (title.length > 0 || artist.length > 0)
   readonly property bool isPlaying: running && player.isPlaying === true
   readonly property string title: running ? String(player.trackTitle || "") : ""
-  readonly property string artist: running ? String(player.trackArtist || "") : ""
-  readonly property string album: running ? String(player.trackAlbum || "") : ""
-  readonly property string artUrl: running ? safeArtUrl(player.trackArtUrl) : ""
-  readonly property real lengthSec: running && player.lengthSupported ? Number(player.length || 0) : 0
-  readonly property bool canSeek: running && player.canSeek === true && !isStream
+  readonly property string artist: running ? String(player.trackArtist || status.artist || "") : ""
+  readonly property string album: running ? String(player.trackAlbum || status.album || "") : ""
+
+  // cliamp publishes no mpris:artUrl for anything, local or remote, so the cover is
+  // derived from the Subsonic stream URL it does publish. The MPRIS value is still
+  // preferred in case a future release starts sending one.
+  readonly property string artUrl: {
+    if (!running) return ""
+    var fromMpris = safeArtUrl(player.trackArtUrl)
+    if (fromMpris.length > 0) return fromMpris
+    return safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
+  }
+  property int artSizePx: 300
+
+  readonly property real lengthSec: {
+    if (running && player.lengthSupported && Number(player.length || 0) > 0) return Number(player.length)
+    return Number(status.durationSec || 0)
+  }
+
+  // Navidrome tracks carry stream:true exactly as radio does, so a known duration is
+  // what separates something seekable from a live stream that never ends.
+  readonly property bool canSeek: running && lengthSec > 0
 
   readonly property bool shuffle: status.shuffle === true
   readonly property string repeat: String(status.repeat || "Off")
@@ -216,9 +233,11 @@ Item {
   property int sinkRate: 0
 
   readonly property string codec: codecFromPath(status.path)
-  // Navidrome answers format=raw with the original file, so a lossy container here
-  // means the server transcoded on the way out.
-  readonly property bool transcoded: codec === "MP3" || codec === "OGG" || codec === "OPUS"
+  // A Subsonic URL is judged by whether cliamp asked for format=raw. A local file is
+  // judged by its container, since nothing re-encoded it on the way in.
+  readonly property bool transcoded: status.path.indexOf("/rest/stream") >= 0
+    ? Model.transcodedFromPath(status.path)
+    : (codec === "MP3" || codec === "OGG" || codec === "OPUS")
   // Any attenuation alters samples, so only an exact 0 dB counts. Setting volume over
   // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
   readonly property bool unityGain: Math.abs(volumeDb) < 0.001

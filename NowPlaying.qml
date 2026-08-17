@@ -19,21 +19,31 @@ Column {
   readonly property bool hasTrack: !!(service && service.hasTrack)
   readonly property bool seekable: !!(service && service.canSeek)
 
+  readonly property string metaLine: {
+    if (!service) return ""
+    var artist = String(service.artist || "")
+    var album = String(service.album || "")
+    if (artist.length > 0 && album.length > 0) return artist + " · " + album
+    return artist.length > 0 ? artist : album
+  }
+
   spacing: Style.space(10)
 
   PanelHero {
     id: hero
     width: parent.width
     title: root.hasTrack ? root.service.title : "Cliamp"
-    meta: root.hasTrack ? root.service.artist : root.phrase
-    detail: root.service ? root.service.album : ""
+    // Artist and album share the meta line. detail renders as a pill sized to its own
+    // text, so a long album name there squeezes the title out of the row entirely.
+    meta: root.hasTrack ? root.metaLine : root.phrase
     foreground: root.foreground
     fontFamily: root.fontFamily
     iconOpacity: root.hasTrack ? 1.0 : 0.5
+    iconSize: Style.space(56)
     iconComponent: Component {
       Item {
-        implicitWidth: Style.font.display
-        implicitHeight: Style.font.display
+        implicitWidth: hero.iconSize
+        implicitHeight: hero.iconSize
 
         Rectangle {
           anchors.fill: parent
@@ -50,14 +60,14 @@ Column {
             asynchronous: true
             cache: true
             // Capped so a large cover is not decoded at full size for a small square.
-            sourceSize.width: Style.font.display * 3
-            sourceSize.height: Style.font.display * 3
+            sourceSize.width: root.service ? root.service.artSizePx : 300
+            sourceSize.height: root.service ? root.service.artSizePx : 300
           }
         }
 
         CliampIcon {
           anchors.centerIn: parent
-          iconSize: Style.font.display
+          iconSize: hero.iconSize * 0.6
           color: root.hasTrack ? root.foreground : root.dim
           visible: art.status !== Image.Ready
         }
