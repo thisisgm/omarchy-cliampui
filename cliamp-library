@@ -36,9 +36,7 @@ import urllib.request
 AUTH_FIELDS = ("u", "t", "s", "c", "v")
 TIMEOUT_SEC = 8
 
-# Loading anything into cliamp means handing it a playlist file, so one scratch playlist
-# is reused and overwritten. Naming them after what was played left an artifact per play
-# sitting in the user's playlist list, which is plumbing, not something they saved.
+# Reused and overwritten, so a play leaves no artifact in the user's playlist list.
 SCRATCH_PLAYLIST = "cliampui"
 
 
@@ -62,11 +60,9 @@ def current_stream_url():
 def playlist_stream_url():
     """A stream URL out of the playlists on disk, for when nothing is playing.
 
-    The token is borrowed from whatever cliamp is streaming, so a daemon that started
-    with an empty queue has nothing to lend and the library cannot be browsed at all.
-    The playlists cliamp loads already hold resolved stream URLs carrying the same
-    token, because that is how it plays them, so no credential is stored to fix this
-    and nothing is read that this script did not already write.
+    A daemon that started with an empty queue publishes no URL to borrow a token from.
+    The playlists already hold the same token in their resolved stream URLs, so nothing
+    has to be cached to browse from a cold start.
     """
     folder = os.path.expanduser("~/.config/cliamp/playlists")
     try:

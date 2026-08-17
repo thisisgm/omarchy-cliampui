@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 
-"""Print how far behind the ears are, in milliseconds.
+"""Print how far the sink is behind the decoder, in milliseconds.
 
-cliamp reports the position it has decoded to, not the position that has reached the
-speakers. On a wired sink the difference is small enough to ignore; over A2DP it is
-around a sixth of a second, which is plainly visible when lyrics are drawn against it.
+cliamp reports the position it has decoded, which over A2DP runs about a sixth of a
+second ahead of what is heard. The Latency param on cliamp's own PipeWire node covers
+the whole path to the sink; pactl reports 0 usec for every sink here and cannot be used.
 
-PipeWire knows the real number: every node carries a Latency param, and the one on
-cliamp's own playback node is the whole path from cliamp to the sink. pactl reports
-"Latency: 0 usec" for both sinks on this box, so it cannot be used for this.
-
-Prints a single integer, and 0 when the answer is unknown, which is the safe default
-because it leaves the position uncompensated rather than shifting it the wrong way.
+Prints one integer, and 0 when unknown, which leaves the position uncompensated.
 """
 
 import json
