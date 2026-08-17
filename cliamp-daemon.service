@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/cliamp --daemon
+ExecStart=%h/.config/omarchy/plugins/github.thisisgm.cliampui/cliamp-daemon-start
 Restart=on-failure
 RestartSec=5
 

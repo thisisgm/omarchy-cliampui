@@ -414,6 +414,12 @@ Item {
   // the life of the terminal session and starts it again afterwards. Without that,
   // opening the player spawns a second copy that the panel cannot see.
   property int sourceRate: 0
+
+  readonly property bool followNativeRate: setting("followNativeRate", true) === true
+  readonly property string nativeRateHelper: String(Qt.resolvedUrl("cliamp-daemon-rate-apply")).replace("file://", "")
+  // The rate already asked for, so an output the hardware or cliamp refuses is not
+  // requested again in a loop on every status poll.
+  property int attemptedNativeRate: 0
   readonly property string sourceRateHelper: String(Qt.resolvedUrl("cliamp-source-rate")).replace("file://", "")
 
   // Resolved per track, because cliamp exposes no source rate of its own.
@@ -438,6 +444,28 @@ Item {
   }
 
   onStatusChanged: if (panelOpen) readSourceRate()
+
+  // Relaunching cliamp is the only way to change its output rate, so this is gated
+  // hard: only while the daemon itself is what is running, only when the file really
+  // differs, and never twice for the same rate.
+  onSourceRateChanged: considerNativeRate()
+
+  function considerNativeRate() {
+    if (!followNativeRate) return
+    if (nativeRateProcess.running) return
+    if (sourceRate <= 0 || streamRate <= 0) return
+    if (Math.abs(sourceRate - streamRate) <= 1) { attemptedNativeRate = 0; return }
+    if (attemptedNativeRate === sourceRate) return
+    attemptedNativeRate = sourceRate
+    nativeRateProcess.command = [nativeRateHelper, String(sourceRate)]
+    nativeRateProcess.running = true
+  }
+
+  Process {
+    id: nativeRateProcess
+    command: []
+    onExited: settleTimer.restart()
+  }
 
   readonly property string sessionHelper: String(Qt.resolvedUrl("cliamp-session")).replace("file://", "")
 

@@ -22,7 +22,8 @@
       "statusIntervalSec": 2,
       "followSourceRate": true,
       "hideWhenStopped": true,
-      "cliampPath": ""
+      "cliampPath": "",
+      "followNativeRate": true
     },
     "schema": [
       {
@@ -38,6 +39,13 @@
         "type": "boolean",
         "label": "Match the audio graph rate to the track",
         "description": "Retunes PipeWire to the track's sample rate while cliamp plays, and restores it afterwards. Affects every application on this machine while music is playing.",
+        "defaultValue": true
+      },
+      {
+        "key": "followNativeRate",
+        "type": "boolean",
+        "label": "Relaunch cliamp at the track's native sample rate",
+        "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Costs a few seconds of silence when the rate actually changes.",
         "defaultValue": true
       },
       {

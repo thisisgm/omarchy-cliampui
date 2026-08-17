@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# ExecStart for cliamp-daemon.service.
+#
+# cliamp fixes its output rate at launch and has no IPC command to change it, so the
+# only way to play a file at its native rate is to start cliamp at that rate. The panel
+# writes the wanted rate here and restarts the unit; this script is what reads it.
+#
+# An empty or missing file means "leave it to cliamp", which is its configured default.
+
+set -uo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cliampui"
+rate_file="$state_dir/sample-rate"
+
+rate=""
+if [[ -r $rate_file ]]; then
+  rate="$(head -1 "$rate_file" 2>/dev/null | tr -cd '0-9')"
+fi
+
+if [[ -n $rate && $rate -gt 0 ]]; then
+  exec /usr/bin/cliamp --daemon --sample-rate "$rate"
+fi
+
+exec /usr/bin/cliamp --daemon
