@@ -200,7 +200,7 @@ def main():
     host, auth = server_from(url)
     if not host:
         # Nothing Subsonic is playing, so there is no token to borrow.
-        if args[0] == "albums":
+        if args[0] in ("albums", "search"):
             print("[]")
         return 0
 
