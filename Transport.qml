@@ -18,7 +18,7 @@ Column {
 
   Row {
     anchors.horizontalCenter: parent.horizontalCenter
-    spacing: Style.space(14)
+    spacing: Style.space(16)
 
     TransportButton {
       glyph: "⇄"
@@ -38,9 +38,12 @@ Column {
 
     TransportButton {
       shape: root.service && root.service.isPlaying ? "pause" : "play"
-      size: Style.space(30)
+      size: Style.space(34)
       enabled: root.live
-      color: root.foreground
+      filled: true
+      fillColor: Color.accent
+      // The glyph sits on the accent disc, so it takes the background colour to read.
+      color: Color.background
       onActivated: root.service.playPause()
     }
 

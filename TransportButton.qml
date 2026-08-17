@@ -12,6 +12,9 @@ Item {
   property int size: 22
   property color color: "white"
   property bool enabled: true
+  // The primary action sits in a filled disc, the way current players mark it.
+  property bool filled: false
+  property color fillColor: "transparent"
 
   signal activated()
 
@@ -21,6 +24,19 @@ Item {
 
   implicitWidth: size
   implicitHeight: size
+
+  Rectangle {
+    anchors.centerIn: parent
+    width: root.size
+    height: root.size
+    radius: width / 2
+    color: root.fillColor
+    visible: root.filled
+    opacity: !root.enabled ? 0.35 : (mouse.containsMouse ? 1.0 : 0.92)
+    scale: mouse.pressed ? 0.94 : 1.0
+    Behavior on scale { NumberAnimation { duration: 90 } }
+    Behavior on opacity { NumberAnimation { duration: 90 } }
+  }
 
   Text {
     anchors.centerIn: parent

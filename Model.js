@@ -163,6 +163,25 @@ function transcodedFromPath(path) {
   return text.indexOf("format=raw") < 0
 }
 
+// Sample input, PipeWire props on a bluez sink:
+// api.bluez5.codec = "sbc_xq", api.bluez5.profile = "a2dp-sink"
+// Returns a display name only for a lossy A2DP link, and "" for anything wired.
+function bluetoothCodecLabel(props) {
+  if (!props) return ""
+  var codec = String(props["api.bluez5.codec"] || "")
+  if (codec.length === 0) return ""
+  var names = {
+    sbc: "SBC",
+    sbc_xq: "SBC-XQ",
+    aac: "AAC",
+    aptx: "aptX",
+    aptx_hd: "aptX HD",
+    ldac: "LDAC",
+    opus_05: "Opus"
+  }
+  return names[codec] || codec.toUpperCase()
+}
+
 function formatRate(hz) {
   var rounded = Math.round(hz / 1000 * 10) / 10
   return String(rounded) + " kHz"
@@ -178,6 +197,15 @@ function verdict(v) {
   if (input.transcoded === true) {
     return { ok: false, text: (codec ? codec + " · " : "") + "transcoded by server" }
   }
+
+  // A2DP re-encodes with SBC or AAC, both lossy, so a Bluetooth sink can never be
+  // bit-perfect at any sample rate. Saying only "resampled" here would let someone
+  // match rates and believe they had got there.
+  var link = String(input.lossyLink || "")
+  if (link.length > 0) {
+    var lead = streamRate > 0 ? formatRate(streamRate) + " · " : ""
+    return { ok: false, text: lead + link + " over Bluetooth, lossy link" }
+  }
   if (streamRate <= 0 || sinkRate <= 0) {
     return { ok: false, text: "" }
   }
@@ -185,12 +213,13 @@ function verdict(v) {
   var prefix = (codec ? codec + " " : "") + formatRate(streamRate)
   if (Math.abs(streamRate - sinkRate) > RATE_MATCH_TOLERANCE_HZ) {
     var text = prefix + " · resampled to " + formatRate(sinkRate)
-    // A rate was forced and the sink took a different one, which is the 88.2 to 96
-    // case measured on this box. Only then is the DAC the thing to blame, so the
-    // requested rate is what distinguishes it from an ordinary unforced mismatch.
+    // A rate was forced and the sink took a different one: the 88.2 to 96 case on the
+    // internal DAC, or AirPods on SBC-XQ which hold the link at 48 kHz. Only then is
+    // the output the thing to blame, which the requested rate is what distinguishes
+    // from an ordinary unforced mismatch.
     var requested = numberOr(input.requestedRate, 0)
     if (requested > 0 && Math.abs(requested - sinkRate) > RATE_MATCH_TOLERANCE_HZ) {
-      text += ", DAC has no " + formatRate(requested).replace(" kHz", "")
+      text += ", output has no " + formatRate(requested).replace(" kHz", "")
     }
     return { ok: false, text: text }
   }

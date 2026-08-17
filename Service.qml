@@ -242,13 +242,19 @@ Item {
   // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
   readonly property bool unityGain: Math.abs(volumeDb) < 0.001
 
+  // Empty for anything wired, so the lossy-link branch only fires on real Bluetooth.
+  readonly property string lossyLink: currentSink
+    ? Model.bluetoothCodecLabel(currentSink.properties)
+    : ""
+
   readonly property var signalVerdict: Model.verdict({
     streamRate: streamRate,
     sinkRate: sinkRate,
     unityGain: unityGain,
     transcoded: transcoded,
     codec: codec,
-    requestedRate: forcedRate
+    requestedRate: forcedRate,
+    lossyLink: lossyLink
   })
 
   function codecFromPath(path) {
@@ -331,6 +337,13 @@ Item {
     if (!followSourceRate) return
     if (isPlaying) matchRate()
     else releaseRate()
+  }
+
+  // A sink change means the old rate reading describes a device no longer in the path,
+  // and the switch can happen outside this panel, so the readback is not tied to a click.
+  onCurrentSinkChanged: {
+    if (followSourceRate && isPlaying) matchRate()
+    rateSettleTimer.restart()
   }
 
   onStreamRateChanged: {

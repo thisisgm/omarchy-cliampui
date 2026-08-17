@@ -4,6 +4,9 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
+// Composed as a media hero rather than with PanelHero, which is built for status
+// widgets and pins the artwork to a label-sized icon. Omarchy's tokens, colours and
+// cursor surfaces still carry the styling.
 Column {
   id: root
 
@@ -12,10 +15,11 @@ Column {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
-  readonly property color dim: Qt.darker(foreground, 1.4)
-  readonly property color sunken: Qt.darker(foreground, 4.0)
-  readonly property int meterBars: 14
-  readonly property real meterHeight: Style.space(12)
+  readonly property color dim: Qt.darker(foreground, 1.45)
+  readonly property color sunken: Qt.darker(foreground, 4.2)
+  readonly property int artSize: Style.space(112)
+  readonly property int meterBars: 16
+  readonly property real meterHeight: Style.space(14)
   readonly property bool hasTrack: !!(service && service.hasTrack)
   readonly property bool seekable: !!(service && service.canSeek)
 
@@ -27,137 +31,173 @@ Column {
     return artist.length > 0 ? artist : album
   }
 
-  spacing: Style.space(10)
+  spacing: Style.space(12)
 
-  PanelHero {
-    id: hero
+  Row {
     width: parent.width
-    title: root.hasTrack ? root.service.title : "Cliamp"
-    // Artist and album share the meta line. detail renders as a pill sized to its own
-    // text, so a long album name there squeezes the title out of the row entirely.
-    meta: root.hasTrack ? root.metaLine : root.phrase
-    foreground: root.foreground
-    fontFamily: root.fontFamily
-    iconOpacity: root.hasTrack ? 1.0 : 0.5
-    iconSize: Style.space(56)
-    iconComponent: Component {
+    spacing: Style.space(14)
+
+    Rectangle {
+      width: root.artSize
+      height: root.artSize
+      radius: Style.space(8)
+      color: root.sunken
+      clip: true
+
+      Image {
+        id: art
+        anchors.fill: parent
+        source: root.service ? root.service.artUrl : ""
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        cache: true
+        // Capped so a large cover is not decoded at full size for a small square.
+        sourceSize.width: root.service ? root.service.artSizePx : 300
+        sourceSize.height: root.service ? root.service.artSizePx : 300
+        opacity: status === Image.Ready ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 160 } }
+      }
+
+      CliampIcon {
+        anchors.centerIn: parent
+        iconSize: root.artSize * 0.34
+        color: root.dim
+        visible: art.status !== Image.Ready
+      }
+    }
+
+    Column {
+      width: parent.width - root.artSize - Style.space(14)
+      spacing: Style.space(4)
+      anchors.verticalCenter: parent.verticalCenter
+
+      Text {
+        width: parent.width
+        text: root.hasTrack ? root.service.title : "Cliamp"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.title
+        font.bold: true
+        wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+      }
+
+      Text {
+        width: parent.width
+        text: root.hasTrack ? root.metaLine : root.phrase
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+      }
+
+      // A fixed height box, because a bare Row sizes to its tallest child and every bar
+      // movement would then shove the whole panel up and down.
       Item {
-        implicitWidth: hero.iconSize
-        implicitHeight: hero.iconSize
+        width: parent.width
+        height: root.meterHeight
+        visible: root.hasTrack
 
-        Rectangle {
-          anchors.fill: parent
-          radius: Style.space(4)
-          color: root.sunken
-          clip: true
-          visible: art.status === Image.Ready
+        Row {
+          anchors.left: parent.left
+          anchors.bottom: parent.bottom
+          height: parent.height
+          spacing: 2
 
-          Image {
-            id: art
-            anchors.fill: parent
-            source: root.service ? root.service.artUrl : ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            cache: true
-            // Capped so a large cover is not decoded at full size for a small square.
-            sourceSize.width: root.service ? root.service.artSizePx : 300
-            sourceSize.height: root.service ? root.service.artSizePx : 300
+          Repeater {
+            model: root.meterBars
+
+            Rectangle {
+              width: 2
+              radius: 1
+              color: Color.accent
+              opacity: 0.9
+              // Each bar leans on a slightly different slice of the level, so the row
+              // moves as a meter rather than as one block rising and falling together.
+              height: Math.max(2, root.meterHeight * Math.max(0, Math.min(1, peakMonitor.peak * (1.6 - index * 0.05))))
+              anchors.bottom: parent.bottom
+              Behavior on height { NumberAnimation { duration: 90 } }
+            }
           }
         }
+      }
+    }
+  }
 
-        CliampIcon {
-          anchors.centerIn: parent
-          iconSize: hero.iconSize * 0.6
-          color: root.hasTrack ? root.foreground : root.dim
-          visible: art.status !== Image.Ready
+  Column {
+    width: parent.width
+    spacing: Style.space(6)
+    visible: root.seekable
+
+    Item {
+      width: parent.width
+      height: Style.space(4)
+
+      Rectangle {
+        anchors.fill: parent
+        radius: height / 2
+        color: root.sunken
+      }
+
+      Rectangle {
+        id: progress
+        height: parent.height
+        radius: height / 2
+        color: Color.accent
+        width: {
+          if (!root.service || root.service.lengthSec <= 0) return 0
+          return parent.width * Math.max(0, Math.min(1, root.service.positionSec / root.service.lengthSec))
+        }
+      }
+
+      Rectangle {
+        width: Style.space(10)
+        height: width
+        radius: width / 2
+        color: Color.accent
+        x: Math.max(0, Math.min(parent.width - width, progress.width - width / 2))
+        anchors.verticalCenter: parent.verticalCenter
+        opacity: scrubArea.containsMouse ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 120 } }
+      }
+
+      MouseArea {
+        id: scrubArea
+        anchors.fill: parent
+        anchors.topMargin: -Style.space(8)
+        anchors.bottomMargin: -Style.space(8)
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: function (mouse) {
+          if (!root.service || root.service.lengthSec <= 0) return
+          root.service.seekTo(root.service.lengthSec * (mouse.x / width))
         }
       }
     }
-  }
 
-  // A fixed height container, because a bare Row sizes itself to its tallest child and
-  // every bar movement would then shove the whole panel up and down. The space is
-  // reserved whenever there is a track, so pausing does not shift the layout either.
-  Item {
-    width: parent.width
-    height: root.meterHeight
-    visible: root.hasTrack
+    Item {
+      width: parent.width
+      height: elapsed.implicitHeight
 
-    Row {
-      anchors.horizontalCenter: parent.horizontalCenter
-      height: parent.height
-      spacing: 2
-
-      Repeater {
-        model: root.meterBars
-
-        Rectangle {
-          width: 3
-          radius: 1.5
-          color: root.foreground
-          // Each bar leans on a slightly different slice of the level, so the row moves
-          // as a meter rather than as one block rising and falling together.
-          height: Math.max(2, root.meterHeight * Math.max(0, Math.min(1, peakMonitor.peak * (1.5 - index * 0.045))))
-          anchors.bottom: parent.bottom
-          Behavior on height { NumberAnimation { duration: 90 } }
-        }
+      Text {
+        id: elapsed
+        anchors.left: parent.left
+        text: root.service ? Model.formatTime(root.service.positionSec) : "0:00"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
-    }
-  }
 
-  Item {
-    width: parent.width
-    height: Style.space(4)
-    visible: root.seekable
-
-    Rectangle {
-      anchors.fill: parent
-      radius: height / 2
-      color: root.sunken
-    }
-
-    Rectangle {
-      height: parent.height
-      radius: height / 2
-      color: root.foreground
-      width: {
-        if (!root.service || root.service.lengthSec <= 0) return 0
-        return parent.width * Math.max(0, Math.min(1, root.service.positionSec / root.service.lengthSec))
+      Text {
+        anchors.right: parent.right
+        text: root.service ? Model.formatTime(root.service.lengthSec) : "0:00"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
-    }
-
-    MouseArea {
-      anchors.fill: parent
-      anchors.topMargin: -Style.space(7)
-      anchors.bottomMargin: -Style.space(7)
-      cursorShape: Qt.PointingHandCursor
-      onClicked: function (mouse) {
-        if (!root.service || root.service.lengthSec <= 0) return
-        root.service.seekTo(root.service.lengthSec * (mouse.x / width))
-      }
-    }
-  }
-
-  Item {
-    width: parent.width
-    height: elapsed.implicitHeight
-    visible: root.seekable
-
-    Text {
-      id: elapsed
-      anchors.left: parent.left
-      text: root.service ? Model.formatTime(root.service.positionSec) : "0:00"
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-
-    Text {
-      anchors.right: parent.right
-      text: root.service ? Model.formatTime(root.service.lengthSec) : "0:00"
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
     }
   }
 
