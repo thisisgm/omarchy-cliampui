@@ -3,6 +3,8 @@
 [cliamp](https://www.cliamp.stream/) in the Omarchy bar: what is playing, where it is
 routed, and whether the audio reaching your DAC is bit-perfect.
 
+![Cliamp panel](docs/panel-playing.png)
+
 The last one is the reason this exists. Nothing else on the machine can tell you that
 a 44.1 kHz track is being quietly resampled to 48 kHz before it reaches the speakers,
 which is what PipeWire does by default to everything.
