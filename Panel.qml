@@ -177,7 +177,7 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          Playlists {
+          Library {
             width: parent.width
             service: cliamp
             foreground: root.foreground

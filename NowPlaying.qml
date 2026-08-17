@@ -22,6 +22,7 @@ Column {
   readonly property real meterHeight: Style.space(14)
   readonly property bool hasTrack: !!(service && service.hasTrack)
   readonly property bool seekable: !!(service && service.canSeek)
+  readonly property bool showProgress: !!(service && service.hasProgress)
 
   readonly property string metaLine: {
     if (!service) return ""
@@ -173,7 +174,7 @@ Column {
   Column {
     width: parent.width
     spacing: Style.space(6)
-    visible: root.seekable
+    visible: root.showProgress
 
     Item {
       width: parent.width
@@ -213,6 +214,7 @@ Column {
         anchors.topMargin: -Style.space(8)
         anchors.bottomMargin: -Style.space(8)
         hoverEnabled: true
+        enabled: root.seekable
         cursorShape: Qt.PointingHandCursor
         onClicked: function (mouse) {
           if (!root.service || root.service.lengthSec <= 0) return

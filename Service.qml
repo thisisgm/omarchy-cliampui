@@ -51,13 +51,20 @@ Item {
   // cliamp publishes no mpris:artUrl for anything, local or remote, so the cover is
   // derived from the Subsonic stream URL it does publish. The MPRIS value is still
   // preferred in case a future release starts sending one.
-  readonly property string artUrl: {
+  // Held rather than recomputed to empty. The cover is derived from the stream path, so
+  // any moment without a status, between tracks or while the socket changes owner,
+  // would otherwise blank the artwork and flash the placeholder.
+  property string artUrl: ""
+  property int artSizePx: 300
+
+  readonly property string resolvedArtUrl: {
     if (!running) return ""
     var fromMpris = player ? safeArtUrl(player.trackArtUrl) : ""
     if (fromMpris.length > 0) return fromMpris
     return safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
   }
-  property int artSizePx: 300
+
+  onResolvedArtUrlChanged: if (resolvedArtUrl.length > 0) artUrl = resolvedArtUrl
 
   readonly property real lengthSec: {
     if (status.durationSec > 0) return status.durationSec
@@ -65,9 +72,11 @@ Item {
     return 0
   }
 
-  // Navidrome tracks carry stream:true exactly as radio does, so a known duration is
-  // what separates something seekable from a live stream that never ends.
-  readonly property bool canSeek: running && lengthSec > 0
+  // Measured: seeking a Navidrome track skips to the next one rather than moving within
+  // it, because these arrive as HTTP streams and cliamp cannot seek them. A duration is
+  // still known, so the progress bar is drawn, but it must not be interactive.
+  readonly property bool hasProgress: running && lengthSec > 0
+  readonly property bool canSeek: hasProgress && !isStream
 
   readonly property bool shuffle: status.shuffle === true
   readonly property string repeat: String(status.repeat || "Off")
@@ -109,9 +118,24 @@ Item {
     return ""
   }
 
+  // Held optimistically so the button flips on press instead of waiting for the poll,
+  // then released as soon as cliamp reports the same thing.
+  property int pendingPlaying: -1
+  readonly property bool showPlaying: pendingPlaying === -1 ? isPlaying : pendingPlaying === 1
+
   function playPause() {
+    pendingPlaying = isPlaying ? 0 : 1
+    playHold.restart()
     if (send('{"cmd":"toggle"}')) { settleTimer.restart(); return }
     if (running) player.togglePlaying()
+  }
+
+  // Never let an optimistic flip stick if cliamp disagrees.
+  Timer {
+    id: playHold
+    interval: 2500
+    repeat: false
+    onTriggered: root.pendingPlaying = -1
   }
 
   function next() {
@@ -124,13 +148,15 @@ Item {
     if (running) player.previous()
   }
 
-  // cliamp's MPRIS exposes a relative Seek and no SetPosition, so an absolute move
-  // is expressed as a delta from where the panel believes the position to be.
+  // The socket takes an absolute seek. MPRIS only offers a relative one, and computing
+  // that delta from a locally interpolated position lands in the wrong place, which is
+  // what made scrubbing feel broken. MPRIS stays as the fallback.
   function seekTo(targetSec) {
     if (!canSeek) return
     var target = Math.max(0, Math.min(lengthSec, Number(targetSec) || 0))
-    player.seek(target - positionSec)
     positionSec = target
+    if (send('{"cmd":"seek","value":' + Math.round(target) + '}')) { settleTimer.restart(); return }
+    if (player) player.seek(target - Number(player.position || 0))
   }
 
   function seekBy(deltaSec) { seekTo(positionSec + Number(deltaSec || 0)) }
@@ -472,7 +498,10 @@ Item {
 
   // Following is deliberately scoped to actual playback: a forced rate reaches every
   // application on the box, so it is released the moment the music stops.
+  // One handler only: QML rejects a second onIsPlayingChanged and the whole component
+  // then fails to load, which takes the widget out of the bar entirely.
   onIsPlayingChanged: {
+    if (pendingPlaying !== -1 && isPlaying === (pendingPlaying === 1)) pendingPlaying = -1
     if (!followSourceRate) return
     if (isPlaying) matchRate()
     else releaseRate()
@@ -504,6 +533,17 @@ Item {
   function readAlbums() {
     if (albumProcess.running) return
     albumProcess.command = [libraryHelper, "albums", "200"]
+    albumProcess.running = true
+  }
+
+  property string albumQuery: ""
+
+  function searchAlbums(query) {
+    albumQuery = String(query || "")
+    if (albumProcess.running) return
+    albumProcess.command = albumQuery.length > 0
+      ? [libraryHelper, "search", albumQuery]
+      : [libraryHelper, "albums", "200"]
     albumProcess.running = true
   }
 
@@ -679,10 +719,12 @@ Item {
     onExited: settleTimer.restart()
   }
 
-  readonly property string sessionHelper: String(Qt.resolvedUrl("cliamp-session")).replace("file://", "")
-
+  // No socket handover any more. cliamp allows one instance per user, so this is only
+  // ever offered when nothing owns the socket, and the in panel library removes the
+  // reason to open a terminal player at all.
   function openPlayer() {
-    Quickshell.execDetached(["uwsm-app", "--", "foot", "--title=cliamp", sessionHelper])
+    if (running) return
+    Quickshell.execDetached(["uwsm-app", "--", "foot", "--title=cliamp", cliampPath])
   }
 
   Process {

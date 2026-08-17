@@ -39,7 +39,7 @@ Column {
     }
 
     TransportButton {
-      shape: root.service && root.service.isPlaying ? "pause" : "play"
+      shape: root.service && root.service.showPlaying ? "pause" : "play"
       size: Style.space(34)
       enabled: root.live
       filled: true

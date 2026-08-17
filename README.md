@@ -61,8 +61,8 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `s` | shuffle |
 | `r` | repeat |
 | `p` | toggle rate following |
-| `l` | open and close the library list |
-| `f` | open cliamp in a terminal, handing the daemon's socket over |
+| `l` | open the library, then type to search albums and artists |
+| `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
 Left click opens the panel, right click plays or pauses without opening it.
@@ -73,7 +73,7 @@ Left click opens the panel, right click plays or pauses without opening it.
 - PipeWire, with `pw-metadata` and `pactl` available, both of which ship with it
 - `omarchy-audio-sink-availability`, part of Omarchy, used to hide outputs with
   nothing plugged into them
-- `foot`, used for the handover terminal
+- `foot`, used only to start cliamp when nothing is running
 
 ## Settings
 
@@ -90,16 +90,20 @@ Left click opens the panel, right click plays or pauses without opening it.
 closing a terminal never stops the music. Pick a saved playlist from the panel's
 Library section and it plays with nothing else open.
 
-**Browsing the library still needs the terminal, once.** cliamp's Navidrome browser is
-TUI only, so build a playlist there with `N`, then save it. After that the panel can
-load it headlessly forever, because a saved playlist keeps resolved stream URLs.
-cliamp maintains "Recently Played" by itself, so there is always one to resume.
+**The library is browsed in the panel, not in a terminal.** cliamp publishes the
+current stream URL in its status, and that URL carries a salted Subsonic token, so
+the panel reaches `getAlbumList2`, `getAlbum` and `search3` with it. No credential is
+ever handled here. Choosing an album writes a playlist and loads it, which replaces
+the queue in place, so the daemon never stops and the music never pauses to let you
+pick something.
 
-**Opening the player hands the socket over.** cliamp cannot attach to a running
-instance: launching it while the daemon holds the socket starts a second, IPC-less
-copy that the panel cannot see. Pressing `f` runs `cliamp-session`, which stops the
-daemon for exactly as long as the terminal is open and starts it again on exit. The
-queue survives, because cliamp writes `resume.json`.
+**cliamp is only launched when nothing is running.** It allows one instance per user,
+so starting it while the daemon holds the socket would create a second, IPC-less copy
+this panel cannot see. The Start row therefore appears only when the socket is free.
+
+**Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and seeking one
+in cliamp 1.63.2 skips to the next track rather than moving within it. The progress
+bar is drawn but is deliberately not interactive for streams.
 
 **Rate following affects every application, not just cliamp.** The sample rate belongs
 to the whole audio graph. While your music plays at 44.1 kHz, a browser playing 48 kHz

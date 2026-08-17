@@ -13,8 +13,9 @@ credential, and an album can be played by building a cliamp playlist from the tr
 URLs and loading it. The daemon stays up throughout.
 
 Usage:
-  cliamp-library albums [limit]     list albums as JSON
-  cliamp-library play <albumId>     replace the queue with that album and play
+  cliamp-library albums [limit]        list albums as JSON
+  cliamp-library search <query>        albums matching a query, artist names included
+  cliamp-library play <albumId>        replace the queue with that album and play
 """
 
 import json
@@ -79,6 +80,30 @@ def albums(host, auth, limit):
         host, auth, "getAlbumList2", type="alphabeticalByName", size=limit
     )
     found = (data.get("albumList2") or {}).get("album") or []
+    return [
+        {
+            "id": a.get("id"),
+            "name": a.get("name") or "",
+            "artist": a.get("artist") or "",
+            "year": a.get("year") or 0,
+            "songCount": a.get("songCount") or 0,
+        }
+        for a in found
+    ]
+
+
+def search(host, auth, query, limit):
+    """search3 matches album and artist names, so one field covers browsing by either."""
+    data = call(
+        host,
+        auth,
+        "search3",
+        query=query,
+        albumCount=limit,
+        artistCount=0,
+        songCount=0,
+    )
+    found = (data.get("searchResult3") or {}).get("album") or []
     return [
         {
             "id": a.get("id"),
@@ -184,6 +209,14 @@ def main():
         print(json.dumps(albums(host, auth, limit)))
         return 0
 
+    if args[0] == "search":
+        query = " ".join(args[1:]).strip()
+        if not query:
+            print(json.dumps(albums(host, auth, 200)))
+            return 0
+        print(json.dumps(search(host, auth, query, 100)))
+        return 0
+
     if args[0] == "play" and len(args) > 1:
         return play_album(host, auth, args[1])
 
@@ -195,6 +228,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except Exception:
         # Never let a browse failure take the panel down; an empty list is the answer.
-        if len(sys.argv) > 1 and sys.argv[1] == "albums":
+        if len(sys.argv) > 1 and sys.argv[1] in ("albums", "search"):
             print("[]")
         sys.exit(1)
