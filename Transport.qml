@@ -106,7 +106,12 @@ Column {
     }
 
     Text {
-      text: root.service ? (root.service.displayVolumeDb > 0 ? "+" : "") + Math.round(root.service.displayVolumeDb) + " dB" : ""
+      // The sign keys off the rounded value, or a hair above zero prints "+0 dB".
+      text: {
+        if (!root.service) return ""
+        var db = Math.round(root.service.displayVolumeDb)
+        return (db > 0 ? "+" : "") + db + " dB"
+      }
       color: root.service && root.service.unityGain ? root.foreground : root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
