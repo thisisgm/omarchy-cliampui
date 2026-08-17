@@ -103,6 +103,11 @@ loads it, which replaces the queue in place, so the daemon never stops and the m
 never pauses to let you pick something. It is a single reused file, so browsing does
 not leave a playlist behind every time you press something.
 
+**Browsing works before anything is playing.** The token is borrowed from whatever
+cliamp is streaming, so a daemon that just started has none to lend. The playlists on
+disk carry the same token in their stream URLs, and those are read instead, which means
+the library is browsable from a cold start without anything being stored anywhere.
+
 **One field searches songs, albums and saved playlists.** Rows are tagged with what
 they are. Artists are not a row of their own, because an artist name already brings
 up their albums and there would be nothing to play on an artist by itself. Choosing a

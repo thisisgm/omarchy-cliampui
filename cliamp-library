@@ -12,6 +12,10 @@ getArtists, so the library can be browsed without this script ever holding a
 credential, and an album can be played by building a cliamp playlist from the track
 URLs and loading it. The daemon stays up throughout.
 
+With nothing playing there is no URL to borrow, which used to leave the library
+unbrowsable after a daemon restart. The playlists on disk hold the same token in
+their resolved stream URLs, so they are read as a fallback.
+
 Usage:
   cliamp-library albums [limit]        list albums as JSON
   cliamp-library search <query>        albums and songs matching a query
@@ -53,6 +57,45 @@ def current_stream_url():
         return (json.loads(cliamp("status", "--json")).get("track") or {}).get("path") or ""
     except Exception:
         return ""
+
+
+def playlist_stream_url():
+    """A stream URL out of the playlists on disk, for when nothing is playing.
+
+    The token is borrowed from whatever cliamp is streaming, so a daemon that started
+    with an empty queue has nothing to lend and the library cannot be browsed at all.
+    The playlists cliamp loads already hold resolved stream URLs carrying the same
+    token, because that is how it plays them, so no credential is stored to fix this
+    and nothing is read that this script did not already write.
+    """
+    folder = os.path.expanduser("~/.config/cliamp/playlists")
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return ""
+
+    # Newest first, so a rotated token is found before a stale one.
+    paths = [os.path.join(folder, n) for n in names if n.endswith(".toml")]
+    try:
+        paths.sort(key=os.path.getmtime, reverse=True)
+    except OSError:
+        pass
+
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                body = handle.read()
+        except OSError:
+            continue
+        # Sample line: path = "https://host/rest/stream?c=cliamp&s=..&t=..&format=raw&id=X"
+        for line in body.split("\n"):
+            line = line.strip()
+            if not line.startswith('path = "'):
+                continue
+            url = line[len('path = "'):].rstrip('"')
+            if "/rest/stream?" in url:
+                return url
+    return ""
 
 
 def server_from(url):
@@ -230,8 +273,9 @@ def main():
     if not args:
         return 2
 
-    url = current_stream_url()
-    host, auth = server_from(url)
+    host, auth = server_from(current_stream_url())
+    if not host:
+        host, auth = server_from(playlist_stream_url())
     if not host:
         # Nothing Subsonic is playing, so there is no token to borrow.
         if args[0] in ("albums", "search"):
