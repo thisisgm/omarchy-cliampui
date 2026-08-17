@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -85,8 +86,15 @@ Panel {
     function signal(): string { return cliamp.signalVerdict.text }
     function output(): string {
       root.sheetOpen = !root.sheetOpen
+      root.libraryOpen = false
       root.cursorIndex = 0
       return root.sheetOpen ? "open" : "closed"
+    }
+    function library(): string {
+      root.libraryOpen = !root.libraryOpen
+      root.sheetOpen = false
+      root.cursorIndex = 0
+      return root.libraryOpen ? "open" : "closed"
     }
   }
 
@@ -155,6 +163,7 @@ Panel {
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Column {
           id: column

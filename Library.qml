@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
@@ -20,6 +21,10 @@ Column {
   readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property var albums: service ? service.albums : []
   readonly property bool cliampRunning: !!(service && service.running)
+
+  // A search can return a hundred albums, which is taller than the whole panel. Capping
+  // the list keeps the hero and transport on screen while browsing.
+  readonly property int listMaxHeight: Style.space(240)
 
   spacing: Style.space(8)
 
@@ -126,50 +131,63 @@ Column {
       onTriggered: if (root.service) root.service.searchAlbums(search.text)
     }
 
-    Column {
+    // The list scrolls inside its own bounds, so the wheel over it moves albums rather
+    // than the whole panel. ListView is used over a Repeater because currentIndex plus
+    // positionViewAtIndex is what keeps the j/k cursor on screen in a list this long.
+    ListView {
+      id: albumList
       width: parent.width
+      height: Math.min(contentHeight, root.listMaxHeight)
+      clip: true
       spacing: Style.space(2)
+      model: root.albums
+      currentIndex: root.cursorIndex
+      keyNavigationEnabled: false
+      boundsBehavior: Flickable.StopAtBounds
+      interactive: contentHeight > height
+      ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-      Repeater {
-        model: root.albums
+      onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
 
-        CursorSurface {
-          width: root.width
-          foreground: root.foreground
-          hasCursor: index === root.cursorIndex
-          implicitHeight: albumLabel.implicitHeight + Style.spacing.rowPaddingX
+      delegate: CursorSurface {
+        required property var modelData
+        required property int index
 
-          MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.service.playAlbum(modelData.id)
+        width: albumList.width
+        foreground: root.foreground
+        hasCursor: ListView.isCurrentItem
+        implicitHeight: albumLabel.implicitHeight + Style.spacing.rowPaddingX
+
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.service.playAlbum(modelData.id)
+        }
+
+        RowLayout {
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.leftMargin: Style.space(10)
+          anchors.rightMargin: Style.space(10)
+          spacing: Style.space(8)
+
+          Text {
+            id: albumLabel
+            Layout.fillWidth: true
+            text: (modelData.artist ? modelData.artist + " · " : "") + modelData.name
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
           }
 
-          RowLayout {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.leftMargin: Style.space(10)
-            anchors.rightMargin: Style.space(10)
-            spacing: Style.space(8)
-
-            Text {
-              id: albumLabel
-              Layout.fillWidth: true
-              text: (modelData.artist ? modelData.artist + " · " : "") + modelData.name
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
-            }
-
-            Text {
-              text: String(modelData.songCount || "")
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
+          Text {
+            text: String(modelData.songCount || "")
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
       }
