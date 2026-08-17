@@ -168,17 +168,23 @@ Item {
 
   readonly property var peakNode: streamNode
 
-  // Taken from live links rather than cached, so a sink that disappears cannot leave
-  // a dead device name sitting in the panel.
+  // Read from the global link list rather than a PwNodeLinkTracker, which reports no
+  // groups at all for this stream. Taken live rather than cached, so a sink that
+  // disappears cannot leave a dead device name sitting in the panel.
   readonly property var currentSink: {
-    if (!streamNode || !streamNode.linkGroups) return null
-    var groups = streamNode.linkGroups.values || []
+    if (!streamNode) return null
+    var groups = Pipewire.linkGroups ? (Pipewire.linkGroups.values || []) : []
     for (var i = 0; i < groups.length; i++) {
       var g = groups[i]
-      if (g && g.target && g.target.isSink) return g.target
+      if (!g || !g.source || !g.target) continue
+      if (g.source.id !== streamNode.id) continue
+      // cliamp is also linked to quickshell itself for the peak meter, and that
+      // tap is not a sink, so the isSink test is what keeps the route honest.
+      if (g.target.isSink) return g.target
     }
     return null
   }
+
 
   readonly property string currentSinkLabel: currentSink
     ? String(currentSink.description || currentSink.nickname || currentSink.name || "")
