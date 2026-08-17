@@ -78,19 +78,19 @@ Column {
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
         font.bold: true
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
         elide: Text.ElideRight
       }
 
+      // Styled exactly as PanelHero styles its meta line, so the hero reads as stock
+      // even though the artwork is too large for PanelHero's icon slot.
       Text {
         width: parent.width
-        text: root.hasTrack ? root.metaLine : root.phrase
+        text: (root.hasTrack ? root.metaLine : root.phrase).toUpperCase()
         color: root.dim
         font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
+        font.pixelSize: Style.font.caption
+        font.bold: true
+        font.letterSpacing: 1.2
         elide: Text.ElideRight
       }
 
