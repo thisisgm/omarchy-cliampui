@@ -23,7 +23,7 @@
       "followSourceRate": true,
       "hideWhenStopped": true,
       "cliampPath": "",
-      "followNativeRate": true
+      "followNativeRate": false
     },
     "schema": [
       {
@@ -45,8 +45,8 @@
         "key": "followNativeRate",
         "type": "boolean",
         "label": "Relaunch cliamp at the track's native sample rate",
-        "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Costs a few seconds of silence when the rate actually changes.",
-        "defaultValue": true
+        "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Off by default: the restart gaps the audio, and since cliamp cannot seek a stream, a Navidrome queue comes back at its first track.",
+        "defaultValue": false
       },
       {
         "key": "hideWhenStopped",

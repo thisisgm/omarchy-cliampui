@@ -664,7 +664,7 @@ Item {
   // opening the player spawns a second copy that the panel cannot see.
   property int sourceRate: 0
 
-  readonly property bool followNativeRate: setting("followNativeRate", true) === true
+  readonly property bool followNativeRate: setting("followNativeRate", false) === true
   readonly property string nativeRateHelper: String(Qt.resolvedUrl("cliamp-daemon-rate-apply")).replace("file://", "")
   // The rate already asked for, so an output the hardware or cliamp refuses is not
   // requested again in a loop on every status poll.
