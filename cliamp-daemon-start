@@ -16,6 +16,10 @@ rate_file="$state_dir/sample-rate"
 rate=""
 if [[ -r $rate_file ]]; then
   rate="$(head -1 "$rate_file" 2>/dev/null | tr -cd '0-9')"
+  # One shot. The pin exists only to survive the restart that wrote it, so turning the
+  # setting off, or any later restart, returns to cliamp's own configured rate instead
+  # of silently keeping a rate nobody asked for any more.
+  rm -f "$rate_file"
 fi
 
 if [[ -n $rate && $rate -gt 0 ]]; then
