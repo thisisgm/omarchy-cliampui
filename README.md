@@ -3,6 +3,8 @@
 [cliamp](https://www.cliamp.stream/) in the Omarchy bar: what is playing, where it is
 routed, and whether the audio reaching your DAC is bit-perfect.
 
+![Cliamp panel](docs/panel-playing.png)
+
 The last one is the reason this exists. Nothing else on the machine can tell you that
 a 44.1 kHz track is being quietly resampled to 48 kHz before it reaches the speakers,
 which is what PipeWire does by default to everything.
@@ -117,6 +119,19 @@ git clone https://github.com/thisisgm/omarchy-cliampui ~/.config/omarchy/plugins
 omarchy plugin enable github.thisisgm.cliampui
 omarchy bar put github.thisisgm.cliampui --section right
 ```
+
+Then, once, point cliamp at your library and start the daemon:
+
+```bash
+cliamp setup
+install -Dm644 ~/.config/omarchy/plugins/github.thisisgm.cliampui/cliamp-daemon.service ~/.local/share/systemd/user/cliamp-daemon.service
+systemctl --user daemon-reload
+systemctl --user enable --now cliamp-daemon.service
+```
+
+`cliamp setup` is what writes your Navidrome server into `~/.config/cliamp/config.toml`.
+Without it the provider does not appear in cliamp at all, and the daemon has nothing to
+play.
 
 ## Removal
 
