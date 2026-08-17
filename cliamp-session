@@ -6,23 +6,53 @@
 # socket prints "cliamp is already running" and then starts a second, IPC-less copy,
 # which is what makes the bar widget and the terminal disagree about what is playing.
 # So the daemon is stopped for exactly as long as the interactive session lasts.
+#
+# The restore runs from a trap rather than the last line, because closing the terminal
+# with a window manager binding kills this script where it stands. Without the trap the
+# daemon stays stopped and the music dies with the window.
 
 set -uo pipefail
 
 unit=cliamp-daemon.service
 
+playing_now() {
+  cliamp status --json 2>/dev/null | grep -q '"state": *"playing"'
+}
+
 was_active=0
+was_playing=0
+
 if systemctl --user is-active --quiet "$unit"; then
   was_active=1
+  playing_now && was_playing=1
   systemctl --user stop "$unit"
 fi
 
-cliamp "$@"
-status=$?
+restore() {
+  trap - EXIT HUP TERM INT
+  [[ $was_active -eq 1 ]] || exit 0
 
-# cliamp writes resume.json on exit, so the daemon picks the queue back up.
-if [[ $was_active -eq 1 ]]; then
+  # An abruptly closed terminal can orphan the interactive cliamp, and it would keep
+  # the socket the daemon needs, so the socket is cleared before handing it back.
+  pkill -x cliamp 2>/dev/null
+  for _ in 1 2 3 4 5; do
+    pgrep -x cliamp >/dev/null || break
+    sleep 0.4
+  done
+
   systemctl --user start "$unit"
-fi
 
-exit "$status"
+  # cliamp restores its queue from resume.json but comes back stopped, so playback is
+  # resumed only when it was actually playing before the handover.
+  if [[ $was_playing -eq 1 ]]; then
+    for _ in 1 2 3 4 5 6; do
+      cliamp status --json >/dev/null 2>&1 && break
+      sleep 0.5
+    done
+    cliamp play >/dev/null 2>&1
+  fi
+}
+
+trap restore EXIT HUP TERM INT
+
+cliamp "$@"

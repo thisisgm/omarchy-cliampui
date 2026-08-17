@@ -258,6 +258,18 @@ function verdict(v) {
     return { ok: false, text: "" }
   }
 
+  // cliamp always outputs one fixed rate and resamples anything else internally,
+  // before PipeWire can see it, so the file's own rate is the only thing that proves
+  // the decode stage was clean. Unknown means the claim cannot be made.
+  var sourceRate = numberOr(input.sourceRate, 0)
+  if (sourceRate > 0 && Math.abs(sourceRate - streamRate) > RATE_MATCH_TOLERANCE_HZ) {
+    return {
+      ok: false,
+      text: formatRate(sourceRate).replace(" kHz", "") + " → " + formatRate(streamRate)
+        + " · cliamp resampled"
+    }
+  }
+
   var prefix = (codec ? codec + " " : "") + formatRate(streamRate)
   if (Math.abs(streamRate - sinkRate) > RATE_MATCH_TOLERANCE_HZ) {
     // Written as an arrow so the whole verdict stays on one line in the panel.
@@ -278,6 +290,11 @@ function verdict(v) {
   }
   if (input.unityGain !== true) {
     return { ok: false, text: prefix + " · volume applied" }
+  }
+  if (sourceRate <= 0) {
+    // Everything after cliamp is provably clean, but the file's rate is unknown, so
+    // this stops short of the full claim rather than overstating it.
+    return { ok: false, text: prefix + " · no resampling after cliamp" }
   }
   return { ok: true, text: prefix + " · bit-perfect" }
 }

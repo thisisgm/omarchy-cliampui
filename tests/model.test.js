@@ -109,9 +109,19 @@ check("several playlists", Model.parsePlaylists("  A  2 tracks\n  B B  10 tracks
 check("a header line is ignored", Model.parsePlaylists("No playlists found."), [])
 check("empty playlist output", Model.parsePlaylists(""), [])
 
-check("bit-perfect when everything lines up",
-  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
+// cliamp outputs a fixed rate, so a known source rate is required before the full
+// claim is made. Measured: a 48 kHz file leaves cliamp at 44100 with default config.
+check("bit-perfect needs the source rate to agree",
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
+
+check("an unknown source rate stops short of the claim",
+  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · no resampling after cliamp" })
+
+check("cliamp resampling the file is named",
+  Model.verdict({ sourceRate: 48000, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "48 → 44.1 kHz · cliamp resampled" })
 
 check("resampled names both rates",
   Model.verdict({ streamRate: 44100, sinkRate: 48000, unityGain: true, transcoded: false, codec: "FLAC" }),
@@ -150,7 +160,7 @@ check("a wired output that refuses a rate is still named",
 
 // A force that the sink honoured is not a substitution either.
 check("an honoured force reports bit-perfect",
-  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 44100 }),
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 44100 }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
 
 // cliamp calls an untouched EQ "Custom", so only the band values can be trusted.

@@ -257,6 +257,7 @@ Item {
     transcoded: transcoded,
     codec: codec,
     requestedRate: forcedRate,
+    sourceRate: sourceRate,
     lossyLink: lossyLink
   })
 
@@ -412,6 +413,32 @@ Item {
   // cliamp cannot attach to a running instance, so the helper stops the daemon for
   // the life of the terminal session and starts it again afterwards. Without that,
   // opening the player spawns a second copy that the panel cannot see.
+  property int sourceRate: 0
+  readonly property string sourceRateHelper: String(Qt.resolvedUrl("cliamp-source-rate")).replace("file://", "")
+
+  // Resolved per track, because cliamp exposes no source rate of its own.
+  function readSourceRate() {
+    if (sourceRateProcess.running) return
+    var path = String(status.path || "")
+    if (path.length === 0) { sourceRate = 0; return }
+    sourceRateProcess.command = [sourceRateHelper, path]
+    sourceRateProcess.running = true
+  }
+
+  Process {
+    id: sourceRateProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = parseInt(String(text || "").trim(), 10)
+        root.sourceRate = isFinite(value) && value > 0 ? value : 0
+      }
+    }
+  }
+
+  onStatusChanged: if (panelOpen) readSourceRate()
+
   readonly property string sessionHelper: String(Qt.resolvedUrl("cliamp-session")).replace("file://", "")
 
   function openPlayer() {

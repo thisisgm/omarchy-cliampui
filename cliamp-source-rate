@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Prints the native sample rate of the track cliamp is playing, or nothing.
+#
+# This exists because cliamp always outputs one fixed rate (config sample_rate,
+# default 44100) and resamples anything else internally, before PipeWire sees it.
+# Watching the graph therefore proves nothing about the file, so the source rate has
+# to come from the file itself.
+#
+# Subsonic stream URLs already carry a salted auth token, so getSong can be asked
+# without this script ever handling a credential.
+
+set -uo pipefail
+
+path="${1:-}"
+[[ -n $path ]] || exit 0
+
+case "$path" in
+  https://*/rest/stream*)
+    # Rebuild the same query against getSong, keeping only the auth and id fields.
+    base="${path%%\?*}"
+    query="${path#*\?}"
+    host="${base%/rest/stream}"
+
+    kept=""
+    IFS='&' read -ra fields <<< "$query"
+    for field in "${fields[@]}"; do
+      case "${field%%=*}" in
+        id|u|t|s|c|v) kept="${kept:+$kept&}$field" ;;
+      esac
+    done
+    [[ -n $kept ]] || exit 0
+
+    curl -sf --max-time 5 "$host/rest/getSong?$kept&f=json" 2>/dev/null \
+      | grep -oE '"samplingRate" *: *[0-9]+' \
+      | grep -oE '[0-9]+$' \
+      | head -1
+    ;;
+
+  http://*|https://*)
+    # A radio stream has no fixed native rate worth reporting.
+    exit 0
+    ;;
+
+  *)
+    [[ -r $path ]] || exit 0
+    ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate \
+      -of default=noprint_wrappers=1:nokey=1 "$path" 2>/dev/null | head -1
+    ;;
+esac
