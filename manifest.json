@@ -23,6 +23,7 @@
       "followSourceRate": true,
       "hideWhenStopped": true,
       "cliampPath": "",
+      "lyricTrimMs": 0,
       "followNativeRate": false
     },
     "schema": [
@@ -47,6 +48,16 @@
         "label": "Relaunch cliamp at the track's native sample rate",
         "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Off by default: the restart gaps the audio, and since cliamp cannot seek a stream, a Navidrome queue comes back at its first track.",
         "defaultValue": false
+      },
+      {
+        "key": "lyricTrimMs",
+        "type": "integer",
+        "label": "Lyric timing trim in milliseconds",
+        "description": "PipeWire reports the latency up to the radio, and that much is already subtracted. A headset buffers beyond it where the host cannot measure, so add more here if lyrics still run ahead of what you hear.",
+        "defaultValue": 0,
+        "min": -1000,
+        "max": 1000,
+        "step": 10
       },
       {
         "key": "hideWhenStopped",

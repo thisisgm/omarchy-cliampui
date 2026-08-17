@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+"""Print how far behind the ears are, in milliseconds.
+
+cliamp reports the position it has decoded to, not the position that has reached the
+speakers. On a wired sink the difference is small enough to ignore; over A2DP it is
+around a sixth of a second, which is plainly visible when lyrics are drawn against it.
+
+PipeWire knows the real number: every node carries a Latency param, and the one on
+cliamp's own playback node is the whole path from cliamp to the sink. pactl reports
+"Latency: 0 usec" for both sinks on this box, so it cannot be used for this.
+
+Prints a single integer, and 0 when the answer is unknown, which is the safe default
+because it leaves the position uncompensated rather than shifting it the wrong way.
+"""
+
+import json
+import subprocess
+import sys
+
+NS_PER_MS = 1000000
+# Anything beyond this is a misread rather than a real link, and shifting lyrics by a
+# second because of a bad parse is worse than not compensating at all.
+MAX_SANE_MS = 2000
+
+
+def dump():
+    try:
+        out = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=8)
+        return json.loads(out.stdout)
+    except Exception:
+        return []
+
+
+def latency_ms(node):
+    """Sample input, the Latency param PipeWire publishes on a node:
+    [{"direction": "Input", "minNs": 167520833, "maxNs": 167520833}]"""
+    params = ((node.get("info") or {}).get("params") or {})
+    for entry in params.get("Latency") or []:
+        value = entry.get("minNs")
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value) // NS_PER_MS
+    return 0
+
+
+def main():
+    for node in dump():
+        if node.get("type") != "PipeWire:Interface:Node":
+            continue
+        props = (node.get("info") or {}).get("props") or {}
+        name = str(props.get("application.name") or props.get("node.name") or "")
+        if "cliamp" not in name.lower():
+            continue
+        ms = latency_ms(node)
+        print(ms if 0 <= ms <= MAX_SANE_MS else 0)
+        return 0
+
+    print(0)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception:
+        print(0)
+        sys.exit(1)

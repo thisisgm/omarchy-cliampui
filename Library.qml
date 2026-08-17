@@ -110,7 +110,7 @@ Column {
 
   Column {
     width: parent.width
-    spacing: Style.space(6)
+    spacing: Style.space(8)
     visible: root.expanded
 
     // search3 matches album, artist and song names, and saved playlists are matched

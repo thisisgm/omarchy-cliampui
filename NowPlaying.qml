@@ -69,28 +69,35 @@ Column {
 
     Column {
       width: parent.width - root.artSize - Style.space(14)
-      spacing: Style.space(4)
+      spacing: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
 
-      MarqueeText {
+      // Title and meta are one unit and stay tight. The analyzer and the lyric are
+      // separate things and take the section rhythm from the column above.
+      Column {
         width: parent.width
-        text: root.hasTrack ? root.service.title : "Cliamp"
-        color: root.foreground
-        fontFamily: root.fontFamily
-        pixelSize: Style.font.title
-        bold: true
-      }
+        spacing: Style.space(4)
 
-      // Styled exactly as PanelHero styles its meta line, so the hero reads as stock
-      // even though the artwork is too large for PanelHero's icon slot.
-      MarqueeText {
-        width: parent.width
-        text: (root.hasTrack ? root.metaLine : root.phrase).toUpperCase()
-        color: root.dim
-        fontFamily: root.fontFamily
-        pixelSize: Style.font.caption
-        bold: true
-        letterSpacing: 1.2
+        MarqueeText {
+          width: parent.width
+          text: root.hasTrack ? root.service.title : "Cliamp"
+          color: root.foreground
+          fontFamily: root.fontFamily
+          pixelSize: Style.font.title
+          bold: true
+        }
+
+        // Styled exactly as PanelHero styles its meta line, so the hero reads as stock
+        // even though the artwork is too large for PanelHero's icon slot.
+        MarqueeText {
+          width: parent.width
+          text: (root.hasTrack ? root.metaLine : root.phrase).toUpperCase()
+          color: root.dim
+          fontFamily: root.fontFamily
+          pixelSize: Style.font.caption
+          bold: true
+          letterSpacing: 1.2
+        }
       }
 
       // cliamp's own 10 band spectrum over IPC, drawn Winamp 2 style as stacked LED
@@ -167,6 +174,19 @@ Column {
             }
           }
         }
+      }
+
+      // The line being sung, under the analyzer. cliamp resolves lyrics itself, so
+      // this draws what it already has rather than fetching anything, and it takes
+      // no room at all on a track that has none.
+      Text {
+        width: parent.width
+        visible: root.hasTrack && text.length > 0
+        text: root.service ? root.service.activeLyric : ""
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
       }
     }
   }

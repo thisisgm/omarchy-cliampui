@@ -22,8 +22,9 @@ which is what PipeWire does by default to everything.
   names the specific thing in the way.
 - **Rate following**, on by default: the audio graph is retuned to the track's sample
   rate while cliamp plays, and released the moment it stops.
-- **Synced lyrics**, resolved by cliamp and read off the same socket, with the line
-  being sung highlighted and kept in view. Collapsed, the section shows just that line.
+- **The line being sung**, one line under the analyzer, resolved by cliamp and read off
+  the same socket. It is offset by the real output latency, so it lines up with what
+  you hear rather than with what has been decoded.
 
 ## The signal line
 
@@ -64,7 +65,6 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `r` | repeat |
 | `p` | toggle rate following |
 | `l` | open the library, then type to search songs, albums and playlists |
-| `y` | open and close the lyrics |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
@@ -85,6 +85,7 @@ Left click opens the panel, right click plays or pauses without opening it.
 | Seconds between status refreshes | 2 | only polls while the panel is open |
 | Match the audio graph rate to the track | on | see the warning below |
 | Relaunch cliamp at the track's native rate | off | see the warning below |
+| Lyric timing trim in milliseconds | 0 | added on top of the measured output latency |
 | Hide the icon when cliamp is not running | on | |
 | Path to cliamp | empty | empty means find it on `PATH` |
 
@@ -115,11 +116,24 @@ this panel cannot see. The Start row therefore appears only when the socket is f
 **Lyrics are cliamp's, not this plugin's.** cliamp resolves them from embedded tags,
 then LRCLIB, then NetEase, and answers `{"cmd":"lyrics"}` on its socket with a list of
 timestamped lines. The panel only draws them, so nothing here reaches the network and
-a track with no lyrics simply has no section.
+a track with no lyrics shows no line at all.
+
+**Lyrics are shifted to match the sound, not the decoder.** cliamp reports the position
+it has decoded to, and PipeWire reports how far behind that the sink is: about 167 ms
+over A2DP on this machine, against roughly nothing on the built-in output. That much is
+subtracted automatically and re-read whenever the output changes. A headset also buffers
+on the far side of the radio, where no host can measure it, so if the words still run
+ahead of what you hear, add the difference with the lyric timing trim in settings.
 
 **Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and seeking one
 in cliamp 1.63.2 skips to the next track rather than moving within it. The progress
 bar is drawn but is deliberately not interactive for streams.
+
+**Volume is not controlled here, on purpose.** cliamp stays at 0 dB, which is the only
+gain that leaves samples untouched, and anything else would cost the bit-perfect verdict.
+Use the stock Omarchy audio panel instead, where cliamp appears as
+`PipeWire ALSA [cliamp]` and can be moved on its own without touching the system volume.
+The signal line still says `volume applied` if cliamp is ever moved off unity.
 
 **Rate following affects every application, not just cliamp.** The sample rate belongs
 to the whole audio graph. While your music plays at 44.1 kHz, a browser playing 48 kHz

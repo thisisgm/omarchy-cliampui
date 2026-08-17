@@ -189,7 +189,35 @@ Item {
   property string lyricsTrackPath: ""
 
   readonly property bool hasLyrics: lyrics.length > 0
-  readonly property int activeLyricIndex: Model.activeLyricIndex(lyrics, positionSec)
+  // cliamp reports the position it has decoded to. Over A2DP the ears are about a
+  // sixth of a second behind that, which is plainly visible against lyrics, so the
+  // line is chosen from the position that has actually reached the sink.
+  property int outputLatencyMs: 0
+  readonly property int lyricTrimMs: intSetting("lyricTrimMs", 0, -1000, 1000)
+  readonly property string latencyHelper: String(Qt.resolvedUrl("cliamp-output-latency")).replace("file://", "")
+
+  function readOutputLatency() {
+    if (latencyProcess.running) return
+    latencyProcess.command = [latencyHelper]
+    latencyProcess.running = true
+  }
+
+  Process {
+    id: latencyProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = parseInt(String(text || "").trim(), 10)
+        root.outputLatencyMs = isFinite(value) && value > 0 ? value : 0
+      }
+    }
+  }
+
+  readonly property int activeLyricIndex: Model.activeLyricIndex(lyrics, positionSec - (outputLatencyMs + lyricTrimMs) / 1000)
+  readonly property string activeLyric: activeLyricIndex >= 0
+    ? String(lyrics[activeLyricIndex].text || "")
+    : ""
 
   function refreshLyrics() {
     var path = String(status.path || "")
@@ -298,7 +326,13 @@ Item {
     interval: 250
     repeat: true
     running: root.panelOpen && root.isPlaying
-    onTriggered: root.positionSec = Math.min(root.lengthSec, root.positionSec + interval / 1000)
+    onTriggered: {
+      var next = root.positionSec + interval / 1000
+      // A repeat restarts the track without MPRIS reporting a track change, so at the
+      // end of one the position is asked for rather than clamped and left stale.
+      if (root.lengthSec > 0 && next >= root.lengthSec) { root.refreshStatus(); return }
+      root.positionSec = next
+    }
   }
 
   Connections {
@@ -313,6 +347,7 @@ Item {
     if (!panelOpen) return
     syncPosition()
     readSinkRate()
+    readOutputLatency()
     readSinkAvailability()
     readPlaylists()
     readLibrary()
@@ -414,6 +449,7 @@ Item {
   // Any attenuation alters samples, so only an exact 0 dB counts. Setting volume over
   // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
   readonly property bool unityGain: Math.abs(volumeDb) < 0.001
+    && (!hasStreamVolume || (!streamMuted && Math.abs(streamVolume - 1) < 0.001))
   readonly property bool eqFlat: status.eqFlat !== false
 
   // Empty for anything wired, so the lossy-link branch only fires on real Bluetooth.
@@ -480,7 +516,7 @@ Item {
     id: rateSettleTimer
     interval: 2000
     repeat: false
-    onTriggered: root.readSinkRate()
+    onTriggered: { root.readSinkRate(); root.readOutputLatency() }
   }
 
   // ---- rate following ----
@@ -626,41 +662,21 @@ Item {
     actionProcess.running = true
   }
 
-  // cliamp's own range. 0 dB is the only value that leaves samples untouched, which is
-  // why the slider marks it rather than treating it as just another position.
-  readonly property real volumeMinDb: -30
-  readonly property real volumeMaxDb: 6
+  // Volume is cliamp's PipeWire stream volume, moved exactly the way the stock audio
+  // panel moves a sink: a property on a tracked node, pushed both ways, so a drag has
+  // no subprocess and no poll behind it to fight. cliamp's own gain stays at unity.
+  readonly property real streamVolume: streamNode && streamNode.audio ? streamNode.audio.volume : 0
+  readonly property bool streamMuted: !!(streamNode && streamNode.audio && streamNode.audio.muted)
+  readonly property bool hasStreamVolume: !!(streamNode && streamNode.audio)
 
-  // Volume only arrives on the status poll, so the slider would snap back to a stale
-  // value between polls while being dragged. The wanted value is held here and shown
-  // until the poll agrees, the same optimistic trick the stock Dropbox panel uses.
-  property real pendingVolumeDb: NaN
-  readonly property real displayVolumeDb: isNaN(pendingVolumeDb) ? volumeDb : pendingVolumeDb
-
-  function setVolume(db) {
-    pendingVolumeDb = Math.max(volumeMinDb, Math.min(volumeMaxDb, Number(db) || 0))
-    volumeSendTimer.restart()
+  function setStreamVolume(value) {
+    if (!streamNode || !streamNode.audio) return
+    streamNode.audio.volume = Math.max(0, Math.min(1, Number(value) || 0))
   }
 
-  // A drag emits a value per pixel, which would be one IPC write per pixel.
-  Timer {
-    id: volumeSendTimer
-    interval: 60
-    repeat: false
-    onTriggered: {
-      var value = root.pendingVolumeDb
-      if (isNaN(value)) return
-      if (root.send('{"cmd":"volume","value":' + value + '}')) { settleTimer.restart(); return }
-      if (actionProcess.running) return
-      actionProcess.command = [root.cliampPath, "volume", String(value)]
-      actionProcess.running = true
-    }
-  }
-
-  // Once cliamp reports the value back, the optimistic hold is released.
-  onVolumeDbChanged: {
-    if (isNaN(pendingVolumeDb)) return
-    if (Math.abs(volumeDb - pendingVolumeDb) < 0.6) pendingVolumeDb = NaN
+  function toggleMute() {
+    if (!streamNode || !streamNode.audio) return
+    streamNode.audio.muted = !streamNode.audio.muted
   }
 
   function setDevice(name) {
@@ -769,6 +785,7 @@ Item {
     onTriggered: {
       root.refreshStatus()
       root.readSinkRate()
+      root.readOutputLatency()
     }
   }
 }

@@ -23,7 +23,6 @@ Panel {
 
   property bool sheetOpen: false
   property bool libraryOpen: false
-  property bool lyricsOpen: false
   property int phraseIndex: 0
   // Cursor rows only exist while the output sheet is open, so the arrows never land
   // on a control that is not currently on screen.
@@ -97,10 +96,6 @@ Panel {
       root.cursorIndex = 0
       return root.libraryOpen ? "open" : "closed"
     }
-    function lyrics(): string {
-      root.lyricsOpen = !root.lyricsOpen
-      return root.lyricsOpen ? "open" : "closed"
-    }
   }
 
   BarIconButton {
@@ -150,7 +145,6 @@ Panel {
         var key = String(t).toLowerCase()
         if (key === "o") { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
         else if (key === "l") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
-        else if (key === "y") root.lyricsOpen = !root.lyricsOpen
         else if (key === "f") cliamp.openPlayer()
         else if (!cliamp.running) return
         else if (key === "n") cliamp.next()
@@ -192,15 +186,6 @@ Panel {
             fontFamily: root.fontFamily
           }
 
-          Lyrics {
-            width: parent.width
-            service: cliamp
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            expanded: root.lyricsOpen
-            onToggleRequested: root.lyricsOpen = !root.lyricsOpen
-          }
-
           Library {
             width: parent.width
             service: cliamp
@@ -226,7 +211,7 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { sheetOpen = false; libraryOpen = false; lyricsOpen = false; return }
+    if (!opened) { sheetOpen = false; libraryOpen = false; return }
     if (panelFlick) panelFlick.contentY = 0
     cursorIndex = 0
     Qt.callLater(function () { keyCatcher.forceActiveFocus() })
