@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import Quickshell.Services.Pipewire
 import "Model.js" as Model
 
 Item {
@@ -135,5 +136,201 @@ Item {
     function onSeek() { root.syncPosition() }
   }
 
-  onPanelOpenChanged: if (panelOpen) syncPosition()
+  onPanelOpenChanged: {
+    if (!panelOpen) return
+    syncPosition()
+    readSinkRate()
+  }
+
+  // ---- PipeWire routing and the signal verdict ----
+
+  readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
+
+  readonly property var sinks: {
+    var list = []
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i]
+      if (n && n.isSink && !n.isStream) list.push(n)
+    }
+    return list
+  }
+
+  // cliamp reaches PipeWire through the ALSA compatibility layer, so its stream
+  // announces itself as "PipeWire ALSA [cliamp]" rather than as a native client.
+  readonly property var streamNode: {
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i]
+      if (!n || !n.isStream || !n.properties) continue
+      if (String(n.properties["application.name"] || "").indexOf("cliamp") >= 0) return n
+    }
+    return null
+  }
+
+  readonly property var peakNode: streamNode
+
+  // Taken from live links rather than cached, so a sink that disappears cannot leave
+  // a dead device name sitting in the panel.
+  readonly property var currentSink: {
+    if (!streamNode || !streamNode.linkGroups) return null
+    var groups = streamNode.linkGroups.values || []
+    for (var i = 0; i < groups.length; i++) {
+      var g = groups[i]
+      if (g && g.target && g.target.isSink) return g.target
+    }
+    return null
+  }
+
+  readonly property string currentSinkLabel: currentSink
+    ? String(currentSink.description || currentSink.nickname || currentSink.name || "")
+    : ""
+
+  readonly property int streamRate: streamNode ? Model.rateFromNodeProps(streamNode.properties) : 0
+  property int sinkRate: 0
+
+  readonly property string codec: codecFromPath(status.path)
+  // Navidrome answers format=raw with the original file, so a lossy container here
+  // means the server transcoded on the way out.
+  readonly property bool transcoded: codec === "MP3" || codec === "OGG" || codec === "OPUS"
+  // Any attenuation alters samples, so only an exact 0 dB counts. Setting volume over
+  // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
+  readonly property bool unityGain: Math.abs(volumeDb) < 0.001
+
+  readonly property var signalVerdict: Model.verdict({
+    streamRate: streamRate,
+    sinkRate: sinkRate,
+    unityGain: unityGain,
+    transcoded: transcoded,
+    codec: codec,
+    requestedRate: forcedRate
+  })
+
+  function codecFromPath(path) {
+    var text = String(path || "")
+    var cut = text.indexOf("?")
+    if (cut >= 0) text = text.slice(0, cut)
+    var dot = text.lastIndexOf(".")
+    if (dot < 0) return ""
+    var ext = text.slice(dot + 1).toUpperCase()
+    if (ext === "MP3" || ext === "FLAC" || ext === "WAV" || ext === "ALAC"
+      || ext === "OGG" || ext === "OPUS") return ext
+    return ""
+  }
+
+  PwObjectTracker { objects: root.sinks }
+  PwObjectTracker { objects: root.streamNode ? [root.streamNode] : [] }
+
+  // The verdict is only ever derived from what the sink actually adopted, never from
+  // the rate that was requested, because an unsupported rate silently lands on the
+  // nearest one the DAC does support. No PipeWire property reports this.
+  function readSinkRate() {
+    if (sinkRateProcess.running) return
+    sinkRateProcess.command = ["pactl", "list", "short", "sinks"]
+    sinkRateProcess.running = true
+  }
+
+  Process {
+    id: sinkRateProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var wanted = root.currentSink ? String(root.currentSink.name || "") : ""
+        var lines = String(text || "").split("\n")
+        for (var i = 0; i < lines.length; i++) {
+          if (wanted.length > 0 && lines[i].indexOf(wanted) < 0) continue
+          var rate = Model.sinkRateFromPactl(lines[i])
+          if (rate > 0) { root.sinkRate = rate; return }
+        }
+        root.sinkRate = 0
+      }
+    }
+  }
+
+  // The graph takes a moment to settle after a forced rate, so the readback waits.
+  Timer {
+    id: rateSettleTimer
+    interval: 2000
+    repeat: false
+    onTriggered: root.readSinkRate()
+  }
+
+  // ---- rate following ----
+
+  readonly property bool followSourceRate: setting("followSourceRate", true) === true
+  property int forcedRate: 0
+
+  function matchRate() {
+    if (streamRate <= 0 || rateProcess.running) return
+    if (forcedRate === streamRate) return
+    rateProcess.command = ["pw-metadata", "-n", "settings", "0", "clock.force-rate", String(streamRate)]
+    rateProcess.running = true
+    forcedRate = streamRate
+    rateSettleTimer.restart()
+  }
+
+  function releaseRate() {
+    if (forcedRate === 0 || rateProcess.running) return
+    rateProcess.command = ["pw-metadata", "-n", "settings", "0", "clock.force-rate", "0"]
+    rateProcess.running = true
+    forcedRate = 0
+    rateSettleTimer.restart()
+  }
+
+  Process { id: rateProcess; command: [] }
+
+  // Following is deliberately scoped to actual playback: a forced rate reaches every
+  // application on the box, so it is released the moment the music stops.
+  onIsPlayingChanged: {
+    if (!followSourceRate) return
+    if (isPlaying) matchRate()
+    else releaseRate()
+  }
+
+  onStreamRateChanged: {
+    if (followSourceRate && isPlaying) matchRate()
+    else rateSettleTimer.restart()
+  }
+
+  Component.onDestruction: releaseRate()
+
+  // ---- actions ----
+
+  function setDevice(name) {
+    if (actionProcess.running || !name) return
+    actionProcess.command = [cliampPath, "device", String(name)]
+    actionProcess.running = true
+  }
+
+  function toggleShuffle() {
+    if (actionProcess.running) return
+    actionProcess.command = [cliampPath, "shuffle"]
+    actionProcess.running = true
+  }
+
+  function cycleRepeat() {
+    if (actionProcess.running) return
+    actionProcess.command = [cliampPath, "repeat"]
+    actionProcess.running = true
+  }
+
+  function openPlayer() {
+    Quickshell.execDetached(["uwsm-app", "--", "alacritty", "-e", cliampPath])
+  }
+
+  Process {
+    id: actionProcess
+    command: []
+    // A cliamp verb takes a moment to land, so the panel re-reads rather than guessing.
+    onExited: settleTimer.restart()
+  }
+
+  Timer {
+    id: settleTimer
+    interval: 400
+    repeat: false
+    onTriggered: {
+      root.refreshStatus()
+      root.readSinkRate()
+    }
+  }
 }
