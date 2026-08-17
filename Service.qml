@@ -90,6 +90,7 @@ Item {
   // Ticked locally between MPRIS updates, because polling Position over D-Bus four
   // times a second is traffic for something the panel can count on its own.
   property real positionSec: 0
+  property bool _askedAtEnd: false
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -207,10 +208,7 @@ Item {
     command: []
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: {
-        var value = parseInt(String(text || "").trim(), 10)
-        root.outputLatencyMs = isFinite(value) && value > 0 ? value : 0
-      }
+      onStreamFinished: root.outputLatencyMs = Model.latencyMs(text)
     }
   }
 
@@ -223,9 +221,10 @@ Item {
     var path = String(status.path || "")
     if (path.length === 0) { lyrics = []; lyricsTrackPath = ""; return }
     if (path === lyricsTrackPath) return
-    lyricsTrackPath = path
     lyrics = []
-    send('{"cmd":"lyrics"}')
+    // Marked fetched only once the request is actually out, or one dropped write
+    // suppresses every retry for the rest of the track.
+    if (send('{"cmd":"lyrics"}')) lyricsTrackPath = path
   }
 
   function syncPosition() {
@@ -249,9 +248,13 @@ Item {
       splitMarker: "\n"
       onRead: function (line) {
         var raw = String(line || "")
-        // One socket carries every reply, and a lyrics reply has no track in it, so
-        // parsing it as a status would blank the title and the artwork.
-        if (Model.messageKind(raw) === "lyrics") { root.lyrics = Model.parseLyrics(raw); return }
+        var kind = Model.messageKind(raw)
+        // Every command answers on this socket too, and an acknowledgement carries no
+        // track, so parsing one as a status blanked the panel until the next poll.
+        // refreshLyrics already empties the list, so a failed lyrics reply needs
+        // nothing here.
+        if (kind === "lyrics") { root.lyrics = Model.parseLyrics(raw); return }
+        if (kind !== "status") return
         var parsed = Model.parseStatus(raw)
         root.status = parsed
         root.lastError = parsed.ok ? "" : parsed.lastError
@@ -328,9 +331,15 @@ Item {
     running: root.panelOpen && root.isPlaying
     onTriggered: {
       var next = root.positionSec + interval / 1000
-      // A repeat restarts the track without MPRIS reporting a track change, so at the
-      // end of one the position is asked for rather than clamped and left stale.
-      if (root.lengthSec > 0 && next >= root.lengthSec) { root.refreshStatus(); return }
+      // A repeat restarts the track without MPRIS reporting a track change, so the
+      // position is asked for at the end rather than clamped and left stale. Asked
+      // once, because a duration shorter than the audio would poll four times a
+      // second for the rest of the track.
+      if (root.lengthSec > 0 && next >= root.lengthSec) {
+        if (!root._askedAtEnd) { root._askedAtEnd = true; root.refreshStatus() }
+        return
+      }
+      root._askedAtEnd = false
       root.positionSec = next
     }
   }
@@ -584,18 +593,25 @@ Item {
     results = Model.matchPlaylists(playlists, libraryQuery).concat(_libraryRows)
   }
 
+  // The query this helper run was dispatched for, so a keystroke that arrives while
+  // one is in flight is not silently dropped and does not leave stale rows on screen.
+  property string _dispatchedQuery: ""
+
   // The library is browsed straight off the Subsonic server using the token cliamp
   // already published, so picking something never has to stop the daemon.
-  function readLibrary() {
-    if (albumProcess.running) return
-    albumProcess.command = [libraryHelper, "albums", "200"]
-    albumProcess.running = true
-  }
+  function readLibrary() { _dispatchLibrary() }
 
   function search(query) {
     libraryQuery = String(query || "")
     _recomputeResults()
+    _dispatchLibrary()
+  }
+
+  // One dispatcher, so a refresh cannot quietly replace an active search with the
+  // full album list while the playlist rows are still filtered by the query.
+  function _dispatchLibrary() {
     if (albumProcess.running) return
+    _dispatchedQuery = libraryQuery
     albumProcess.command = libraryQuery.length > 0
       ? [libraryHelper, "search", libraryQuery]
       : [libraryHelper, "albums", "200"]
@@ -621,6 +637,7 @@ Item {
         root._recomputeResults()
       }
     }
+    onExited: if (root._dispatchedQuery !== root.libraryQuery) root._dispatchLibrary()
   }
 
   Process {
@@ -660,6 +677,7 @@ Item {
     if (actionProcess.running) return
     actionProcess.command = [cliampPath, "load", String(name)]
     actionProcess.running = true
+    settleTimer.restart()
   }
 
   // Volume is cliamp's PipeWire stream volume, moved exactly the way the stock audio
@@ -710,10 +728,16 @@ Item {
   readonly property string sourceRateHelper: String(Qt.resolvedUrl("cliamp-source-rate")).replace("file://", "")
 
   // Resolved per track, because cliamp exposes no source rate of its own.
+  property string sourceRateTrackPath: ""
+
   function readSourceRate() {
     if (sourceRateProcess.running) return
     var path = String(status.path || "")
-    if (path.length === 0) { sourceRate = 0; return }
+    if (path.length === 0) { sourceRate = 0; sourceRateTrackPath = ""; return }
+    // Status is reassigned on every poll, so without this the helper queried the
+    // server every couple of seconds for a rate that only changes with the track.
+    if (path === sourceRateTrackPath) return
+    sourceRateTrackPath = path
     sourceRateProcess.command = [sourceRateHelper, path]
     sourceRateProcess.running = true
   }
@@ -785,7 +809,6 @@ Item {
     onTriggered: {
       root.refreshStatus()
       root.readSinkRate()
-      root.readOutputLatency()
     }
   }
 }

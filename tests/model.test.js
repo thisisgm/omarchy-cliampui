@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, parseLyrics, activeLyricIndex, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -162,7 +162,21 @@ const lyricsReply = '{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}
 check("a lyrics reply is not mistaken for a status", Model.messageKind(lyricsReply), "lyrics")
 check("a status reply is a status", Model.messageKind(radio), "status")
 check("a history reply is neither", Model.messageKind('{"ok":true,"history":[]}'), "history")
-check("garbage is treated as a status, which parses it into an error", Model.messageKind("not json"), "status")
+// Byte for byte from the socket. Every command answers here too, and routing an
+// acknowledgement to parseStatus blanked the track: the whole panel flickered on
+// every play, pause, next, shuffle and repeat.
+check("a bare acknowledgement is not a status", Model.messageKind('{"ok":true}'), "ack")
+check("an acknowledgement carrying a field is still not a status", Model.messageKind('{"ok":true,"shuffle":false}'), "ack")
+check("a command error is not a status", Model.messageKind('{"ok":false,"error":"no lyrics found"}'), "ack")
+check("garbage is not a status either", Model.messageKind("not json"), "ack")
+check("a status is the reply that carries state", Model.messageKind('{"ok":true,"state":"playing"}'), "status")
+check("a stopped status is still a status", Model.messageKind('{"ok":false,"state":"stopped"}'), "status")
+check("a command error yields no lyrics", Model.parseLyrics('{"ok":false,"error":"no lyrics found"}'), [])
+
+check("the latency helper output parses", Model.latencyMs("167\n"), 167)
+check("an unknown latency is zero, which compensates nothing", Model.latencyMs("0"), 0)
+check("garbage latency is zero", Model.latencyMs("what"), 0)
+check("a negative latency is refused", Model.latencyMs("-40"), 0)
 
 check("lyrics parse", Model.parseLyrics(lyricsReply).length, 3)
 check("a lyric keeps its timestamp", Model.parseLyrics(lyricsReply)[0], { start: 30.23, text: "One more time" })

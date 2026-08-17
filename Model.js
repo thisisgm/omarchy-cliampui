@@ -224,8 +224,12 @@ function parsePlaylists(raw) {
   return out
 }
 
-// One socket carries every reply, so a message has to say what it is before it is
-// parsed. Only lyrics and status are consumed; anything else is ignored.
+// Sample replies, all measured on the socket:
+//   status  {"ok":true,"state":"playing","track":{..},"position":12.3,..}
+//   lyrics  {"ok":true,"lyrics":[{"start":30.23,"text":".."}]}
+//   ack     {"ok":true}   {"ok":true,"shuffle":false}   {"ok":false,"error":".."}
+// One socket carries all of them, and only a status carries state. Parsing an ack as
+// a status blanks the track, which flickered the whole panel on every command.
 function messageKind(raw) {
   var text = String(raw || "").trim()
   if (text.length === 0) return "none"
@@ -233,12 +237,13 @@ function messageKind(raw) {
   try {
     data = JSON.parse(text)
   } catch (e) {
-    return "status"
+    return "ack"
   }
-  if (!data || typeof data !== "object") return "status"
+  if (!data || typeof data !== "object") return "ack"
   if (data.lyrics !== undefined) return "lyrics"
   if (data.history !== undefined) return "history"
-  return "status"
+  if (data.state !== undefined) return "status"
+  return "ack"
 }
 
 // Sample input, the reply to {"cmd":"lyrics"}, measured on the box:
@@ -263,6 +268,12 @@ function parseLyrics(raw) {
     out.push({ start: numberOr(line.start, 0), text: body })
   }
   return out
+}
+
+// Sample input, all cliamp-output-latency ever prints: 167
+function latencyMs(raw) {
+  var value = parseInt(String(raw || "").trim(), 10)
+  return isFinite(value) && value > 0 ? value : 0
 }
 
 // The last line whose start has passed. Lyrics arrive in order, so a plain scan is
