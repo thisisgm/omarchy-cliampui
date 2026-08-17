@@ -62,7 +62,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `r` | repeat |
 | `p` | toggle rate following |
 | `l` | open and close the library list |
-| `f` | open the player in a terminal, handing the daemon's socket over |
+| `f` | open cliamp in a terminal, handing the daemon's socket over |
 | `esc` | close |
 
 Left click opens the panel, right click plays or pauses without opening it.
