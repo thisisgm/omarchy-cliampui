@@ -286,26 +286,20 @@ function parseResults(raw) {
   return out
 }
 
-// Saved playlists matched by name, as rows the same list can show. Playing an album
-// writes a playlist named "<artist> - <album>", so those mirrors are dropped when the
-// album itself is already in the results and would otherwise appear twice.
-function matchPlaylists(playlists, query, results) {
+// The playlist cliamp-library overwrites on every play. It is how a queue is handed to
+// cliamp, not something the user saved, so it never appears as a row.
+var SCRATCH_PLAYLIST = "cliampui"
+
+// Saved playlists matched by name, as rows the same list can show.
+function matchPlaylists(playlists, query) {
   var out = []
   var list = playlists && playlists.length !== undefined ? playlists : []
   var needle = trim(query).toLowerCase()
-  var mirrors = {}
-  var found = results && results.length !== undefined ? results : []
-  for (var i = 0; i < found.length; i++) {
-    var r = found[i]
-    if (!r || r.kind !== "album") continue
-    mirrors[String(r.name || "").toLowerCase()] = true
-    mirrors[trim(String(r.artist || "") + " - " + String(r.name || "")).toLowerCase()] = true
-  }
   for (var j = 0; j < list.length; j++) {
     var name = String(list[j] && list[j].name || "")
     if (name.length === 0) continue
+    if (name === SCRATCH_PLAYLIST) continue
     if (needle.length > 0 && name.toLowerCase().indexOf(needle) === -1) continue
-    if (mirrors[name.toLowerCase()]) continue
     out.push({
       kind: "playlist",
       id: name,

@@ -94,9 +94,10 @@ Library section and it plays with nothing else open.
 **The library is browsed in the panel, not in a terminal.** cliamp publishes the
 current stream URL in its status, and that URL carries a salted Subsonic token, so
 the panel reaches `getAlbumList2`, `getAlbum`, `getSong` and `search3` with it. No
-credential is ever handled here. Choosing a row writes a playlist and loads it, which
-replaces the queue in place, so the daemon never stops and the music never pauses to
-let you pick something.
+credential is ever handled here. Choosing a row overwrites one scratch playlist and
+loads it, which replaces the queue in place, so the daemon never stops and the music
+never pauses to let you pick something. It is a single reused file, so browsing does
+not leave a playlist behind every time you press something.
 
 **One field searches songs, albums and saved playlists.** Rows are tagged with what
 they are. Artists are not a row of their own, because an artist name already brings

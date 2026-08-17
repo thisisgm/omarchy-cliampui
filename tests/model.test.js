@@ -139,24 +139,22 @@ check("a row without an id is skipped", Model.parseResults('[{"name":"x"}]'), []
 check("garbage results yield nothing", Model.parseResults("nope"), [])
 check("empty results", Model.parseResults("[]"), [])
 
-// Playing an album writes a playlist named "<artist> - <album>", so the two would
-// otherwise show as separate rows for the same thing.
-const saved = [{ name: "Recently Played", count: 55 }, { name: "Daft Punk - Discovery", count: 14 }]
-const found = Model.parseResults(mixed)
+// cliampui is the scratch playlist every play overwrites, so it is plumbing rather
+// than something the user saved and must never appear as a row.
+const saved = [{ name: "Recently Played", count: 55 }, { name: "cliampui", count: 12 }]
 
-check("a playlist mirroring an album in the results is dropped",
-  Model.matchPlaylists(saved, "", found).map(function (r) { return r.name }),
+check("the scratch playlist is never a row",
+  Model.matchPlaylists(saved, "").map(function (r) { return r.name }),
   ["Recently Played"])
 check("a playlist row is typed and carries its count",
-  Model.matchPlaylists(saved, "", found)[0],
+  Model.matchPlaylists(saved, "")[0],
   { kind: "playlist", id: "Recently Played", name: "Recently Played", artist: "", album: "", songCount: 55, duration: 0 })
 check("playlists filter on the query, case insensitively",
-  Model.matchPlaylists(saved, "RECENT", []).map(function (r) { return r.name }),
+  Model.matchPlaylists(saved, "RECENT").map(function (r) { return r.name }),
   ["Recently Played"])
-check("the mirror shows when its album is not in the results",
-  Model.matchPlaylists(saved, "discovery", []).map(function (r) { return r.name }),
-  ["Daft Punk - Discovery"])
-check("no playlists is not an error", Model.matchPlaylists(null, "x", null), [])
+check("searching for the scratch name still finds nothing",
+  Model.matchPlaylists(saved, "cliampui"), [])
+check("no playlists is not an error", Model.matchPlaylists(null, "x"), [])
 
 check("bit-perfect needs the source rate to agree",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),

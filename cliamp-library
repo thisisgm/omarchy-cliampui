@@ -32,6 +32,11 @@ import urllib.request
 AUTH_FIELDS = ("u", "t", "s", "c", "v")
 TIMEOUT_SEC = 8
 
+# Loading anything into cliamp means handing it a playlist file, so one scratch playlist
+# is reused and overwritten. Naming them after what was played left an artifact per play
+# sitting in the user's playlist list, which is plumbing, not something they saved.
+SCRATCH_PLAYLIST = "cliampui"
+
 
 def cliamp(*args):
     try:
@@ -145,12 +150,10 @@ def play_album(host, auth, album_id):
     # `playlist create` stats its arguments on disk, so it rejects stream URLs. The
     # documented TOML format accepts http/https paths, so the file is written directly
     # and loaded, which replaces the queue without the daemon ever stopping.
-    name = ((album.get("artist") or "") + " - " + (album.get("name") or "")).strip(" -")
-    name = name or "Album"
-    write_playlist(name, album, songs, host, auth)
-    cliamp("load", name)
+    write_playlist(SCRATCH_PLAYLIST, album, songs, host, auth)
+    cliamp("load", SCRATCH_PLAYLIST)
     cliamp("play")
-    print(name)
+    print(((album.get("artist") or "") + " - " + (album.get("name") or "")).strip(" -"))
     return 0
 
 
@@ -168,12 +171,10 @@ def play_song(host, auth, song_id):
         "artist": song.get("artist") or "",
         "coverArt": song.get("coverArt") or "",
     }
-    name = ((song.get("artist") or "") + " - " + (song.get("title") or "")).strip(" -")
-    name = name or "Song"
-    write_playlist(name, album, [song], host, auth)
-    cliamp("load", name)
+    write_playlist(SCRATCH_PLAYLIST, album, [song], host, auth)
+    cliamp("load", SCRATCH_PLAYLIST)
     cliamp("play")
-    print(name)
+    print(((song.get("artist") or "") + " - " + (song.get("title") or "")).strip(" -"))
     return 0
 
 
