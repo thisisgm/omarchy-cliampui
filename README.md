@@ -32,6 +32,9 @@ Three conditions must all hold before the words "bit-perfect" appear:
 2. The sink rate equals the stream rate, read back from the sink after any change,
    never assumed from the rate that was requested.
 3. Gain is unity. cliamp must be at 0 dB, because any attenuation alters samples.
+4. The EQ is flat. All ten bands must be zero, since any lift or cut is DSP. cliamp
+   labels an untouched EQ "Custom", so the panel reads the band values and ignores the
+   preset name. Set it with `cliamp eq Flat`.
 
 | What you see | What it means |
 | --- | --- |
@@ -39,6 +42,7 @@ Three conditions must all hold before the words "bit-perfect" appear:
 | `44.1 → 48 kHz · resampled` | the graph is at a different rate |
 | `88.2 → 96 kHz · output has no 88.2` | the rate was requested and the hardware substituted another |
 | `44.1 kHz · SBC-XQ · lossy` | a Bluetooth sink, which re-encodes and can never be bit-perfect |
+| `FLAC 44.1 kHz · EQ applied` | a band is lifted or cut, so the samples are processed |
 | `FLAC 44.1 kHz · volume applied` | rates line up but a gain is being applied |
 | `MP3 · transcoded by server` | the file was re-encoded before it ever arrived |
 
@@ -102,6 +106,13 @@ to the whole audio graph. While your music plays at 44.1 kHz, a browser playing 
 audio is the thing being resampled instead. It is released as soon as playback stops,
 so the effect lasts exactly as long as the music. Turn it off in settings if that trade
 is wrong for you.
+
+**Bluetooth can never be bit-perfect, and that is not a Linux limitation.** A2DP
+carries SBC, AAC and similar, all lossy. AirPods offer only SBC, SBC-XQ and AAC, so
+there is no lossless path to them from any operating system. Apple does not send
+lossless over Bluetooth either; only AirPods Max on a wired USB-C connection carries
+it. The panel names the codec in use so you can pick the least-bad one with the
+Bluetooth settings, but none of them will earn a bit-perfect verdict.
 
 **Enable this or the stock Media widget, not both.** They will both show the same track.
 

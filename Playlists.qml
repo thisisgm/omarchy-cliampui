@@ -21,7 +21,6 @@ Column {
   readonly property var items: service ? service.playlists : []
 
   spacing: Style.space(8)
-  visible: items.length > 0
 
   PanelSeparator {
     width: parent.width
@@ -34,9 +33,58 @@ Column {
     fontFamily: root.fontFamily
   }
 
+  // Always present, because changing track means opening the player and a keybind
+  // alone is not something anyone finds.
   CursorSurface {
     width: parent.width
     foreground: root.foreground
+    implicitHeight: openLabel.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.service.openPlayer()
+    }
+
+    RowLayout {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        id: openLabel
+        Layout.fillWidth: true
+        text: "Open player"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        text: "f"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        text: "›"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+    }
+  }
+
+  CursorSurface {
+    width: parent.width
+    foreground: root.foreground
+    visible: root.items.length > 0
     implicitHeight: summaryLabel.implicitHeight + Style.spacing.rowPaddingX
 
     MouseArea {

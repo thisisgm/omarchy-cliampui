@@ -110,7 +110,7 @@ check("a header line is ignored", Model.parsePlaylists("No playlists found."), [
 check("empty playlist output", Model.parsePlaylists(""), [])
 
 check("bit-perfect when everything lines up",
-  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC" }),
+  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
 
 check("resampled names both rates",
@@ -152,6 +152,17 @@ check("a wired output that refuses a rate is still named",
 check("an honoured force reports bit-perfect",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 44100 }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
+
+// cliamp calls an untouched EQ "Custom", so only the band values can be trusted.
+check("an untouched EQ is flat", Model.parseStatus(local).eqFlat, true)
+check("a raised band is not flat",
+  Model.parseStatus('{"ok":true,"state":"playing","eq_bands":[0,0,3,0,0,0,0,0,0,0]}').eqFlat, false)
+check("a missing eq is treated as flat",
+  Model.parseStatus('{"ok":true,"state":"playing"}').eqFlat, true)
+
+check("EQ breaks it even when rates and gain are right",
+  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: false, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · EQ applied" })
 
 check("gain breaks it even when rates match",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, transcoded: false, codec: "FLAC" }),

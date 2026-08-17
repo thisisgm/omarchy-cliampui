@@ -22,6 +22,7 @@ function defaultStatus() {
     shuffle: false,
     repeat: "Off",
     visualizer: "",
+    eqFlat: true,
     lastError: ""
   }
 }
@@ -64,6 +65,7 @@ function parseStatus(raw) {
   out.shuffle = data.shuffle === true
   out.repeat = String(data.repeat || "Off")
   out.visualizer = String(data.visualizer || "")
+  out.eqFlat = bandsAreFlat(data.eq_bands)
 
   out.durationSec = numberOr(data.duration, 0)
 
@@ -77,6 +79,17 @@ function parseStatus(raw) {
     if (out.durationSec <= 0) out.durationSec = numberOr(track.duration_secs, 0)
   }
   return out
+}
+
+// A ten band EQ with anything but zeros is DSP, so the samples are no longer the
+// ones the file holds. The preset name is not consulted: cliamp reports "Custom"
+// for an untouched EQ, so only the numbers are trustworthy.
+function bandsAreFlat(bands) {
+  if (!bands || bands.length === undefined) return true
+  for (var i = 0; i < bands.length; i++) {
+    if (numberOr(bands[i], 0) !== 0) return false
+  }
+  return true
 }
 
 function numberOr(value, fallback) {
@@ -259,6 +272,9 @@ function verdict(v) {
         + " · output has no " + formatRate(requested).replace(" kHz", "")
     }
     return { ok: false, text: text }
+  }
+  if (input.eqFlat === false) {
+    return { ok: false, text: prefix + " · EQ applied" }
   }
   if (input.unityGain !== true) {
     return { ok: false, text: prefix + " · volume applied" }

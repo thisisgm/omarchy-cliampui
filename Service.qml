@@ -242,6 +242,7 @@ Item {
   // Any attenuation alters samples, so only an exact 0 dB counts. Setting volume over
   // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
   readonly property bool unityGain: Math.abs(volumeDb) < 0.001
+  readonly property bool eqFlat: status.eqFlat !== false
 
   // Empty for anything wired, so the lossy-link branch only fires on real Bluetooth.
   readonly property string lossyLink: currentSink
@@ -252,6 +253,7 @@ Item {
     streamRate: streamRate,
     sinkRate: sinkRate,
     unityGain: unityGain,
+    eqFlat: eqFlat,
     transcoded: transcoded,
     codec: codec,
     requestedRate: forcedRate,

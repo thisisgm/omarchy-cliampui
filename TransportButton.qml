@@ -18,8 +18,11 @@ Item {
 
   signal activated()
 
-  readonly property real mark: size * 0.5
-  readonly property real barWidth: Math.max(2, size * 0.11)
+  readonly property real mark: size * (filled ? 0.40 : 0.5)
+  readonly property real barWidth: Math.max(2, size * (filled ? 0.10 : 0.11))
+  // A right pointing triangle carries its visual mass left of its bounding box, so
+  // centering it geometrically reads as left heavy. Nudge it right to sit true.
+  readonly property real opticalNudge: mark * 0.09
   readonly property real opacityNow: !enabled ? 0.35 : (mouse.containsMouse ? 1.0 : 0.85)
 
   implicitWidth: size
@@ -60,6 +63,7 @@ Item {
 
   Item {
     anchors.centerIn: parent
+    anchors.horizontalCenterOffset: root.opticalNudge
     width: root.mark
     height: root.mark
     visible: root.shape === "play"
@@ -114,8 +118,10 @@ Item {
     property real size: 10
     property color ink: "white"
     property bool pointsRight: true
+    // Slightly narrower than tall, which is how a play mark is normally drawn.
+    readonly property real span: size * 0.88
 
-    width: size
+    width: span
     height: size
     preferredRendererType: Shape.CurveRenderer
 
@@ -123,11 +129,11 @@ Item {
       fillColor: tri.ink
       strokeWidth: 0
       strokeColor: "transparent"
-      startX: tri.pointsRight ? 0 : tri.size
+      startX: tri.pointsRight ? 0 : tri.span
       startY: 0
-      PathLine { x: tri.pointsRight ? tri.size : 0; y: tri.size / 2 }
-      PathLine { x: tri.pointsRight ? 0 : tri.size; y: tri.size }
-      PathLine { x: tri.pointsRight ? 0 : tri.size; y: 0 }
+      PathLine { x: tri.pointsRight ? tri.span : 0; y: tri.size / 2 }
+      PathLine { x: tri.pointsRight ? 0 : tri.span; y: tri.size }
+      PathLine { x: tri.pointsRight ? 0 : tri.span; y: 0 }
     }
   }
 }
