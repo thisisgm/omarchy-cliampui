@@ -75,23 +75,32 @@ Column {
     }
   }
 
-  Row {
-    anchors.horizontalCenter: parent.horizontalCenter
-    spacing: 2
-    visible: peakMonitor.enabled
+  // A fixed height container, because a bare Row sizes itself to its tallest child and
+  // every bar movement would then shove the whole panel up and down. The space is
+  // reserved whenever there is a track, so pausing does not shift the layout either.
+  Item {
+    width: parent.width
+    height: root.meterHeight
+    visible: root.hasTrack
 
-    Repeater {
-      model: root.meterBars
+    Row {
+      anchors.horizontalCenter: parent.horizontalCenter
+      height: parent.height
+      spacing: 2
 
-      Rectangle {
-        width: 3
-        radius: 1.5
-        color: root.foreground
-        // Each bar leans on a slightly different slice of the level, so the row moves
-        // as a meter rather than as one block rising and falling together.
-        height: Math.max(2, root.meterHeight * Math.max(0, Math.min(1, peakMonitor.peak * (1.5 - index * 0.045))))
-        anchors.bottom: parent.bottom
-        Behavior on height { NumberAnimation { duration: 90 } }
+      Repeater {
+        model: root.meterBars
+
+        Rectangle {
+          width: 3
+          radius: 1.5
+          color: root.foreground
+          // Each bar leans on a slightly different slice of the level, so the row moves
+          // as a meter rather than as one block rising and falling together.
+          height: Math.max(2, root.meterHeight * Math.max(0, Math.min(1, peakMonitor.peak * (1.5 - index * 0.045))))
+          anchors.bottom: parent.bottom
+          Behavior on height { NumberAnimation { duration: 90 } }
+        }
       }
     }
   }
