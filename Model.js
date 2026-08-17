@@ -228,8 +228,7 @@ function parsePlaylists(raw) {
 //   status  {"ok":true,"state":"playing","track":{..},"position":12.3,..}
 //   lyrics  {"ok":true,"lyrics":[{"start":30.23,"text":".."}]}
 //   ack     {"ok":true}   {"ok":true,"shuffle":false}   {"ok":false,"error":".."}
-// One socket carries all of them, and only a status carries state. Parsing an ack as
-// a status blanks the track, which flickered the whole panel on every command.
+// Only a status carries state; parsing an ack as one blanks the track.
 function messageKind(raw) {
   var text = String(raw || "").trim()
   if (text.length === 0) return "none"
@@ -276,8 +275,7 @@ function latencyMs(raw) {
   return isFinite(value) && value > 0 ? value : 0
 }
 
-// The last line whose start has passed. Lyrics arrive in order, so a plain scan is
-// enough and is clearer than a bisect over a list this short.
+// The last line whose start has passed, scanned in order because the list is short.
 function activeLyricIndex(lines, positionSec) {
   if (!lines || lines.length === undefined) return -1
   var at = numberOr(positionSec, 0)
@@ -351,8 +349,7 @@ function parseResults(raw) {
   return out
 }
 
-// The playlist cliamp-library overwrites on every play. It is how a queue is handed to
-// cliamp, not something the user saved, so it never appears as a row.
+// Overwritten on every play, so it is plumbing rather than a playlist the user saved.
 var SCRATCH_PLAYLIST = "cliampui"
 
 // Saved playlists matched by name, as rows the same list can show.

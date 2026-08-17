@@ -139,8 +139,7 @@ check("a row without an id is skipped", Model.parseResults('[{"name":"x"}]'), []
 check("garbage results yield nothing", Model.parseResults("nope"), [])
 check("empty results", Model.parseResults("[]"), [])
 
-// cliampui is the scratch playlist every play overwrites, so it is plumbing rather
-// than something the user saved and must never appear as a row.
+// cliampui is the scratch playlist every play overwrites, never a row.
 const saved = [{ name: "Recently Played", count: 55 }, { name: "cliampui", count: 12 }]
 
 check("the scratch playlist is never a row",
@@ -162,9 +161,7 @@ const lyricsReply = '{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}
 check("a lyrics reply is not mistaken for a status", Model.messageKind(lyricsReply), "lyrics")
 check("a status reply is a status", Model.messageKind(radio), "status")
 check("a history reply is neither", Model.messageKind('{"ok":true,"history":[]}'), "history")
-// Byte for byte from the socket. Every command answers here too, and routing an
-// acknowledgement to parseStatus blanked the track: the whole panel flickered on
-// every play, pause, next, shuffle and repeat.
+// Routing one of these to parseStatus blanked the track on every command.
 check("a bare acknowledgement is not a status", Model.messageKind('{"ok":true}'), "ack")
 check("an acknowledgement carrying a field is still not a status", Model.messageKind('{"ok":true,"shuffle":false}'), "ack")
 check("a command error is not a status", Model.messageKind('{"ok":false,"error":"no lyrics found"}'), "ack")
