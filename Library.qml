@@ -26,6 +26,9 @@ Column {
   // the list keeps the hero and transport on screen while browsing.
   readonly property int listMaxHeight: Style.space(240)
 
+  // Keeps the cursor row on screen without ListView owning the cursor.
+  onCursorIndexChanged: if (cursorIndex >= 0) albumList.positionViewAtIndex(cursorIndex, ListView.Contain)
+
   spacing: Style.space(8)
 
   PanelSeparator {
@@ -142,13 +145,15 @@ Column {
       clip: true
       spacing: Style.space(2)
       model: root.results
-      currentIndex: root.cursorIndex
       keyNavigationEnabled: false
       boundsBehavior: Flickable.StopAtBounds
       interactive: contentHeight > height
       ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-      onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+      // currentIndex is deliberately not bound to the panel's cursor. ListView writes
+      // that property itself on every model swap, which breaks a QML binding for good
+      // and would strand the highlight on row 0 while the panel still held its cursor.
+      onCountChanged: if (root.cursorIndex >= 0) positionViewAtIndex(root.cursorIndex, ListView.Contain)
 
       delegate: CursorSurface {
         required property var modelData
@@ -156,7 +161,7 @@ Column {
 
         width: albumList.width
         foreground: root.foreground
-        hasCursor: ListView.isCurrentItem
+        hasCursor: index === root.cursorIndex
         implicitHeight: albumLabel.implicitHeight + Style.spacing.rowPaddingX
 
         MouseArea {
