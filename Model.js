@@ -269,7 +269,7 @@ function parseLyrics(raw) {
   return out
 }
 
-// Sample input, all cliamp-output-latency ever prints: 167
+// Sample input, one integer of milliseconds from cliamp-output-latency: 167, or 0.
 function latencyMs(raw) {
   var value = parseInt(String(raw || "").trim(), 10)
   return isFinite(value) && value > 0 ? value : 0
