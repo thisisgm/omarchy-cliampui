@@ -103,9 +103,10 @@ check("unknown rates say nothing",
   { ok: false, text: "" })
 
 check("zero time", Model.formatTime(0), "0:00")
-check("one minute 47", Model.formatTime(107000000), "1:47")
-check("over an hour", Model.formatTime(3723000000), "1:02:03")
+check("one minute 47", Model.formatTime(107), "1:47")
+check("over an hour", Model.formatTime(3723), "1:02:03")
 check("negative is clamped", Model.formatTime(-5), "0:00")
+check("fractional seconds floor", Model.formatTime(107.9), "1:47")
 check("non-numeric is zero", Model.formatTime("x"), "0:00")
 
 check("error whitespace collapses", Model.elideError("a\n\n  b"), "a b")

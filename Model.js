@@ -3,7 +3,6 @@
 var MAX_ERROR_CHARS = 140
 var SECONDS_PER_MINUTE = 60
 var MINUTES_PER_HOUR = 60
-var MICROSECONDS_PER_SECOND = 1000000
 // Rates within this many Hz are the same rate, covering integer rounding in the graph.
 var RATE_MATCH_TOLERANCE_HZ = 1
 
@@ -140,14 +139,15 @@ function verdict(v) {
   return { ok: true, text: prefix + " · bit-perfect" }
 }
 
-function formatTime(microseconds) {
-  var us = Number(microseconds)
-  if (!isFinite(us) || us < 0) us = 0
-  var total = Math.floor(us / MICROSECONDS_PER_SECOND)
-  var seconds = total % SECONDS_PER_MINUTE
+// Quickshell reports MPRIS position and length as doubles in seconds, not microseconds.
+function formatTime(seconds) {
+  var value = Number(seconds)
+  if (!isFinite(value) || value < 0) value = 0
+  var total = Math.floor(value)
+  var secs = total % SECONDS_PER_MINUTE
   var minutes = Math.floor(total / SECONDS_PER_MINUTE) % MINUTES_PER_HOUR
   var hours = Math.floor(total / (SECONDS_PER_MINUTE * MINUTES_PER_HOUR))
-  var ss = seconds < 10 ? "0" + seconds : String(seconds)
+  var ss = secs < 10 ? "0" + secs : String(secs)
   if (hours > 0) {
     var mm = minutes < 10 ? "0" + minutes : String(minutes)
     return hours + ":" + mm + ":" + ss
