@@ -99,14 +99,14 @@ Column {
       minimum: root.service ? root.service.volumeMinDb : -30
       maximum: root.service ? root.service.volumeMaxDb : 6
       step: 1
-      value: root.service ? root.service.volumeDb : 0
+      value: root.service ? root.service.displayVolumeDb : 0
       onMoved: function (v) { if (root.service) root.service.setVolume(v) }
       // Right click returns to unity, the only gain that keeps a route bit-perfect.
       onRightClicked: if (root.service) root.service.setVolume(0)
     }
 
     Text {
-      text: root.service ? (root.service.volumeDb > 0 ? "+" : "") + Math.round(root.service.volumeDb) + " dB" : ""
+      text: root.service ? (root.service.displayVolumeDb > 0 ? "+" : "") + Math.round(root.service.displayVolumeDb) + " dB" : ""
       color: root.service && root.service.unityGain ? root.foreground : root.dim
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption

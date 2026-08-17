@@ -32,7 +32,10 @@ Item {
     function onValuesChanged() { root.refreshPlayer() }
   }
 
-  Component.onCompleted: refreshPlayer()
+  Component.onCompleted: {
+    refreshPlayer()
+    rebuildNodes()
+  }
 
   // cliamp's own status is the truth. MPRIS only fills gaps and provides seeking, so a
   // stale or missing player object can no longer freeze the panel.
@@ -228,13 +231,28 @@ Item {
 
   // ---- PipeWire routing and the signal verdict ----
 
-  readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
+  // Rebuilt from an explicit signal rather than left as a binding on values: a list
+  // mutating in place does not re-evaluate the binding, so a device connected after
+  // the panel loaded never appeared. Same hazard as the MPRIS player lookup.
+  property var nodes: []
+
+  function rebuildNodes() {
+    nodes = Pipewire.nodes ? (Pipewire.nodes.values || []) : []
+    readSinkAvailability()
+  }
+
+  Connections {
+    target: Pipewire.nodes
+    ignoreUnknownSignals: true
+    function onValuesChanged() { root.rebuildNodes() }
+  }
 
   property var sinkAvailability: ({})
 
   // Filtered through the stock helper the first-party audio panel uses, so an output
   // with nothing plugged into it is never offered as somewhere to send music.
   readonly property var sinks: {
+    // Depends on nodes, which is now replaced wholesale on every change.
     var list = []
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i]
@@ -467,12 +485,36 @@ Item {
   readonly property real volumeMinDb: -30
   readonly property real volumeMaxDb: 6
 
+  // Volume only arrives on the status poll, so the slider would snap back to a stale
+  // value between polls while being dragged. The wanted value is held here and shown
+  // until the poll agrees, the same optimistic trick the stock Dropbox panel uses.
+  property real pendingVolumeDb: NaN
+  readonly property real displayVolumeDb: isNaN(pendingVolumeDb) ? volumeDb : pendingVolumeDb
+
   function setVolume(db) {
-    var value = Math.max(volumeMinDb, Math.min(volumeMaxDb, Number(db) || 0))
-    if (send('{"cmd":"volume","value":' + value + '}')) { settleTimer.restart(); return }
-    if (actionProcess.running) return
-    actionProcess.command = [cliampPath, "volume", String(value)]
-    actionProcess.running = true
+    pendingVolumeDb = Math.max(volumeMinDb, Math.min(volumeMaxDb, Number(db) || 0))
+    volumeSendTimer.restart()
+  }
+
+  // A drag emits a value per pixel, which would be one IPC write per pixel.
+  Timer {
+    id: volumeSendTimer
+    interval: 60
+    repeat: false
+    onTriggered: {
+      var value = root.pendingVolumeDb
+      if (isNaN(value)) return
+      if (root.send('{"cmd":"volume","value":' + value + '}')) { settleTimer.restart(); return }
+      if (actionProcess.running) return
+      actionProcess.command = [root.cliampPath, "volume", String(value)]
+      actionProcess.running = true
+    }
+  }
+
+  // Once cliamp reports the value back, the optimistic hold is released.
+  onVolumeDbChanged: {
+    if (isNaN(pendingVolumeDb)) return
+    if (Math.abs(volumeDb - pendingVolumeDb) < 0.6) pendingVolumeDb = NaN
   }
 
   function setDevice(name) {
