@@ -248,7 +248,7 @@ function messageKind(raw) {
 
 // Sample input, the reply to {"cmd":"lyrics"}, measured on the box:
 // {"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}]}
-// A track with no lyrics answers with an empty list rather than an error.
+// A track with no lyrics answers {"ok":false,"error":"no lyrics found"} instead.
 function parseLyrics(raw) {
   var out = []
   var text = String(raw || "").trim()
