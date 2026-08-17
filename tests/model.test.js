@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseAlbums, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -125,11 +125,38 @@ check("a failed frame yields nothing", Model.parseBands('{"ok":false,"error":"x"
 check("garbage yields nothing", Model.parseBands("not json"), [])
 check("empty yields nothing", Model.parseBands(""), [])
 
-check("albums parse", Model.parseAlbums('[{"id":"a1","name":"Discovery","artist":"Daft Punk","songCount":14}]'),
-  [{ id: "a1", name: "Discovery", artist: "Daft Punk", songCount: 14 }])
-check("an album without an id is skipped", Model.parseAlbums('[{"name":"x"}]'), [])
-check("garbage albums yield nothing", Model.parseAlbums("nope"), [])
-check("empty albums", Model.parseAlbums("[]"), [])
+// One mixed array from `cliamp-library search`, the shape the helper prints.
+const mixed = '[{"kind":"album","id":"a1","name":"Discovery","artist":"Daft Punk","songCount":14},' +
+  '{"kind":"song","id":"s1","name":"One More Time","artist":"Daft Punk","album":"Discovery","duration":320}]'
+
+check("an album row parses", Model.parseResults(mixed)[0],
+  { kind: "album", id: "a1", name: "Discovery", artist: "Daft Punk", album: "", songCount: 14, duration: 0 })
+check("a song row parses", Model.parseResults(mixed)[1],
+  { kind: "song", id: "s1", name: "One More Time", artist: "Daft Punk", album: "Discovery", songCount: 0, duration: 320 })
+check("an untagged row is an album", Model.parseResults('[{"id":"a1","name":"x"}]')[0].kind, "album")
+check("an unknown kind falls back to album", Model.parseResults('[{"kind":"artist","id":"a1","name":"x"}]')[0].kind, "album")
+check("a row without an id is skipped", Model.parseResults('[{"name":"x"}]'), [])
+check("garbage results yield nothing", Model.parseResults("nope"), [])
+check("empty results", Model.parseResults("[]"), [])
+
+// Playing an album writes a playlist named "<artist> - <album>", so the two would
+// otherwise show as separate rows for the same thing.
+const saved = [{ name: "Recently Played", count: 55 }, { name: "Daft Punk - Discovery", count: 14 }]
+const found = Model.parseResults(mixed)
+
+check("a playlist mirroring an album in the results is dropped",
+  Model.matchPlaylists(saved, "", found).map(function (r) { return r.name }),
+  ["Recently Played"])
+check("a playlist row is typed and carries its count",
+  Model.matchPlaylists(saved, "", found)[0],
+  { kind: "playlist", id: "Recently Played", name: "Recently Played", artist: "", album: "", songCount: 55, duration: 0 })
+check("playlists filter on the query, case insensitively",
+  Model.matchPlaylists(saved, "RECENT", []).map(function (r) { return r.name }),
+  ["Recently Played"])
+check("the mirror shows when its album is not in the results",
+  Model.matchPlaylists(saved, "discovery", []).map(function (r) { return r.name }),
+  ["Daft Punk - Discovery"])
+check("no playlists is not an error", Model.matchPlaylists(null, "x", null), [])
 
 check("bit-perfect needs the source rate to agree",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),

@@ -256,9 +256,10 @@ function parseBands(raw) {
   return out
 }
 
-// Sample input, one JSON array from `cliamp-library albums`:
-// [{"id":"7tO..","name":"Discovery","artist":"Daft Punk","year":2001,"songCount":14}]
-function parseAlbums(raw) {
+// Sample input, one JSON array from `cliamp-library albums` or `search`, mixing kinds:
+// [{"kind":"album","id":"7tO..","name":"Discovery","artist":"Daft Punk","songCount":14},
+//  {"kind":"song","id":"a9F..","name":"One More Time","artist":"Daft Punk","album":"Discovery","duration":320}]
+function parseResults(raw) {
   var out = []
   var text = String(raw || "").trim()
   if (text.length === 0) return out
@@ -273,10 +274,46 @@ function parseAlbums(raw) {
     var a = data[i]
     if (!a || !a.id) continue
     out.push({
+      kind: a.kind === "song" ? "song" : "album",
       id: String(a.id),
       name: String(a.name || ""),
       artist: String(a.artist || ""),
-      songCount: numberOr(a.songCount, 0)
+      album: String(a.album || ""),
+      songCount: numberOr(a.songCount, 0),
+      duration: numberOr(a.duration, 0)
+    })
+  }
+  return out
+}
+
+// Saved playlists matched by name, as rows the same list can show. Playing an album
+// writes a playlist named "<artist> - <album>", so those mirrors are dropped when the
+// album itself is already in the results and would otherwise appear twice.
+function matchPlaylists(playlists, query, results) {
+  var out = []
+  var list = playlists && playlists.length !== undefined ? playlists : []
+  var needle = trim(query).toLowerCase()
+  var mirrors = {}
+  var found = results && results.length !== undefined ? results : []
+  for (var i = 0; i < found.length; i++) {
+    var r = found[i]
+    if (!r || r.kind !== "album") continue
+    mirrors[String(r.name || "").toLowerCase()] = true
+    mirrors[trim(String(r.artist || "") + " - " + String(r.name || "")).toLowerCase()] = true
+  }
+  for (var j = 0; j < list.length; j++) {
+    var name = String(list[j] && list[j].name || "")
+    if (name.length === 0) continue
+    if (needle.length > 0 && name.toLowerCase().indexOf(needle) === -1) continue
+    if (mirrors[name.toLowerCase()]) continue
+    out.push({
+      kind: "playlist",
+      id: name,
+      name: name,
+      artist: "",
+      album: "",
+      songCount: numberOr(list[j].count, 0),
+      duration: 0
     })
   }
   return out

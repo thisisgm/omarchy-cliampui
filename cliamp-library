@@ -14,8 +14,11 @@ URLs and loading it. The daemon stays up throughout.
 
 Usage:
   cliamp-library albums [limit]        list albums as JSON
-  cliamp-library search <query>        albums matching a query, artist names included
+  cliamp-library search <query>        albums and songs matching a query
   cliamp-library play <albumId>        replace the queue with that album and play
+  cliamp-library play-song <songId>    replace the queue with that one song and play
+
+Every row carries a "kind" so one list can mix albums and songs.
 """
 
 import json
@@ -75,25 +78,40 @@ def call(host, auth, endpoint, **params):
     return body.get("subsonic-response") or {}
 
 
+def album_row(a):
+    return {
+        "kind": "album",
+        "id": a.get("id"),
+        "name": a.get("name") or "",
+        "artist": a.get("artist") or "",
+        "year": a.get("year") or 0,
+        "songCount": a.get("songCount") or 0,
+    }
+
+
+def song_row(s):
+    return {
+        "kind": "song",
+        "id": s.get("id"),
+        "name": s.get("title") or "",
+        "artist": s.get("artist") or "",
+        "album": s.get("album") or "",
+        "duration": s.get("duration") or 0,
+    }
+
+
 def albums(host, auth, limit):
     data = call(
         host, auth, "getAlbumList2", type="alphabeticalByName", size=limit
     )
     found = (data.get("albumList2") or {}).get("album") or []
-    return [
-        {
-            "id": a.get("id"),
-            "name": a.get("name") or "",
-            "artist": a.get("artist") or "",
-            "year": a.get("year") or 0,
-            "songCount": a.get("songCount") or 0,
-        }
-        for a in found
-    ]
+    return [album_row(a) for a in found]
 
 
 def search(host, auth, query, limit):
-    """search3 matches album and artist names, so one field covers browsing by either."""
+    """search3 matches album, artist and song names, so one field covers all three.
+    Artists are asked for at zero because an artist name already surfaces their albums,
+    and an artist row would have nothing to play on its own."""
     data = call(
         host,
         auth,
@@ -101,19 +119,12 @@ def search(host, auth, query, limit):
         query=query,
         albumCount=limit,
         artistCount=0,
-        songCount=0,
+        songCount=limit,
     )
-    found = (data.get("searchResult3") or {}).get("album") or []
-    return [
-        {
-            "id": a.get("id"),
-            "name": a.get("name") or "",
-            "artist": a.get("artist") or "",
-            "year": a.get("year") or 0,
-            "songCount": a.get("songCount") or 0,
-        }
-        for a in found
-    ]
+    result = data.get("searchResult3") or {}
+    rows = [album_row(a) for a in (result.get("album") or [])]
+    rows.extend(song_row(s) for s in (result.get("song") or []))
+    return rows
 
 
 def play_album(host, auth, album_id):
@@ -137,6 +148,29 @@ def play_album(host, auth, album_id):
     name = ((album.get("artist") or "") + " - " + (album.get("name") or "")).strip(" -")
     name = name or "Album"
     write_playlist(name, album, songs, host, auth)
+    cliamp("load", name)
+    cliamp("play")
+    print(name)
+    return 0
+
+
+def play_song(host, auth, song_id):
+    """One song replaces the queue, the same way an album does. cliamp has no
+    jump-to-track command, so playing its album from the right place is not possible."""
+    data = call(host, auth, "getSong", id=song_id)
+    song = data.get("song") or {}
+    if not song.get("id"):
+        return 1
+
+    album = {
+        "id": song.get("albumId") or "",
+        "name": song.get("album") or "",
+        "artist": song.get("artist") or "",
+        "coverArt": song.get("coverArt") or "",
+    }
+    name = ((song.get("artist") or "") + " - " + (song.get("title") or "")).strip(" -")
+    name = name or "Song"
+    write_playlist(name, album, [song], host, auth)
     cliamp("load", name)
     cliamp("play")
     print(name)
@@ -219,6 +253,9 @@ def main():
 
     if args[0] == "play" and len(args) > 1:
         return play_album(host, auth, args[1])
+
+    if args[0] == "play-song" and len(args) > 1:
+        return play_song(host, auth, args[1])
 
     return 2
 

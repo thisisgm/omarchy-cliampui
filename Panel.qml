@@ -51,15 +51,15 @@ Panel {
   implicitHeight: button.implicitHeight
 
   function moveCursor(delta) {
-    var count = libraryOpen ? cliamp.albums.length : cliamp.sinks.length
+    var count = libraryOpen ? cliamp.results.length : cliamp.sinks.length
     if (count === 0) return
     cursorIndex = (cursorIndex + delta + count) % count
   }
 
   function activateCursor() {
-    var list = libraryOpen ? cliamp.albums : cliamp.sinks
+    var list = libraryOpen ? cliamp.results : cliamp.sinks
     if (cursorIndex < 0 || cursorIndex >= list.length) return
-    if (libraryOpen) cliamp.playAlbum(String(list[cursorIndex].id || ""))
+    if (libraryOpen) cliamp.playResult(list[cursorIndex])
     else cliamp.setDevice(String(list[cursorIndex].name || ""))
   }
 

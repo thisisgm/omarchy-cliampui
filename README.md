@@ -61,7 +61,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `s` | shuffle |
 | `r` | repeat |
 | `p` | toggle rate following |
-| `l` | open the library, then type to search albums and artists |
+| `l` | open the library, then type to search songs, albums and playlists |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
@@ -93,10 +93,16 @@ Library section and it plays with nothing else open.
 
 **The library is browsed in the panel, not in a terminal.** cliamp publishes the
 current stream URL in its status, and that URL carries a salted Subsonic token, so
-the panel reaches `getAlbumList2`, `getAlbum` and `search3` with it. No credential is
-ever handled here. Choosing an album writes a playlist and loads it, which replaces
-the queue in place, so the daemon never stops and the music never pauses to let you
-pick something.
+the panel reaches `getAlbumList2`, `getAlbum`, `getSong` and `search3` with it. No
+credential is ever handled here. Choosing a row writes a playlist and loads it, which
+replaces the queue in place, so the daemon never stops and the music never pauses to
+let you pick something.
+
+**One field searches songs, albums and saved playlists.** Rows are tagged with what
+they are. Artists are not a row of their own, because an artist name already brings
+up their albums and there would be nothing to play on an artist by itself. Choosing a
+song plays that one song: cliamp has no jump-to-track command, so starting its album
+from the right place is not something this can offer.
 
 **cliamp is only launched when nothing is running.** It allows one instance per user,
 so starting it while the daemon holds the socket would create a second, IPC-less copy

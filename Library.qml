@@ -19,10 +19,10 @@ Column {
   signal toggleRequested()
 
   readonly property color dim: Qt.darker(foreground, 1.45)
-  readonly property var albums: service ? service.albums : []
+  readonly property var results: service ? service.results : []
   readonly property bool cliampRunning: !!(service && service.running)
 
-  // A search can return a hundred albums, which is taller than the whole panel. Capping
+  // A search can return a hundred rows, which is taller than the whole panel. Capping
   // the list keeps the hero and transport on screen while browsing.
   readonly property int listMaxHeight: Style.space(240)
 
@@ -48,8 +48,8 @@ Column {
 
     Text {
       id: countLabel
-      text: root.albums.length > 0
-        ? root.albums.length + (root.albums.length === 1 ? " ALBUM" : " ALBUMS")
+      text: root.results.length > 0
+        ? root.results.length + (root.results.length === 1 ? " RESULT" : " RESULTS")
         : ""
       color: Qt.darker(root.foreground, 1.4)
       font.family: root.fontFamily
@@ -85,7 +85,7 @@ Column {
       Text {
         id: summaryLabel
         Layout.fillWidth: true
-        text: root.expanded ? "Browse" : "Browse albums"
+        text: root.expanded ? "Browse" : "Browse the library"
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
@@ -113,11 +113,12 @@ Column {
     spacing: Style.space(6)
     visible: root.expanded
 
-    // search3 matches album and artist names, so one field browses by either.
+    // search3 matches album, artist and song names, and saved playlists are matched
+    // locally, so one field reaches everything that can be played.
     TextField {
       id: search
       width: parent.width
-      placeholderText: "Search albums and artists"
+      placeholderText: "Search songs, albums and playlists"
       foreground: root.foreground
       font.family: root.fontFamily
 
@@ -128,10 +129,10 @@ Column {
       id: searchDebounce
       interval: 260
       repeat: false
-      onTriggered: if (root.service) root.service.searchAlbums(search.text)
+      onTriggered: if (root.service) root.service.search(search.text)
     }
 
-    // The list scrolls inside its own bounds, so the wheel over it moves albums rather
+    // The list scrolls inside its own bounds, so the wheel over it moves rows rather
     // than the whole panel. ListView is used over a Repeater because currentIndex plus
     // positionViewAtIndex is what keeps the j/k cursor on screen in a list this long.
     ListView {
@@ -140,7 +141,7 @@ Column {
       height: Math.min(contentHeight, root.listMaxHeight)
       clip: true
       spacing: Style.space(2)
-      model: root.albums
+      model: root.results
       currentIndex: root.cursorIndex
       keyNavigationEnabled: false
       boundsBehavior: Flickable.StopAtBounds
@@ -162,7 +163,7 @@ Column {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.service.playAlbum(modelData.id)
+          onClicked: root.service.playResult(modelData)
         }
 
         RowLayout {
@@ -183,11 +184,13 @@ Column {
             elide: Text.ElideRight
           }
 
+          // The kind is the load-bearing detail once one list mixes three of them.
           Text {
-            text: String(modelData.songCount || "")
+            text: String(modelData.kind || "").toUpperCase()
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+            font.letterSpacing: 1.2
           }
         }
       }
@@ -200,7 +203,7 @@ Column {
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       horizontalAlignment: Text.AlignHCenter
-      visible: root.albums.length === 0
+      visible: root.results.length === 0
     }
   }
 

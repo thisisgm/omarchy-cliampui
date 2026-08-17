@@ -304,7 +304,7 @@ Item {
     readSinkRate()
     readSinkAvailability()
     readPlaylists()
-    readAlbums()
+    readLibrary()
   }
 
   // ---- PipeWire routing and the signal verdict ----
@@ -524,32 +524,43 @@ Item {
   // ---- actions ----
 
   property var playlists: []
-  property var albums: []
+  property var results: []
+  property string libraryQuery: ""
+
+  // Server rows on their own. Saved playlists are matched locally and merged in front,
+  // so a playlist list arriving late does not need a second server round trip.
+  property var _libraryRows: []
 
   readonly property string libraryHelper: String(Qt.resolvedUrl("cliamp-library")).replace("file://", "")
 
+  function _recomputeResults() {
+    results = Model.matchPlaylists(playlists, libraryQuery, _libraryRows).concat(_libraryRows)
+  }
+
   // The library is browsed straight off the Subsonic server using the token cliamp
-  // already published, so picking an album never has to stop the daemon.
-  function readAlbums() {
+  // already published, so picking something never has to stop the daemon.
+  function readLibrary() {
     if (albumProcess.running) return
     albumProcess.command = [libraryHelper, "albums", "200"]
     albumProcess.running = true
   }
 
-  property string albumQuery: ""
-
-  function searchAlbums(query) {
-    albumQuery = String(query || "")
+  function search(query) {
+    libraryQuery = String(query || "")
+    _recomputeResults()
     if (albumProcess.running) return
-    albumProcess.command = albumQuery.length > 0
-      ? [libraryHelper, "search", albumQuery]
+    albumProcess.command = libraryQuery.length > 0
+      ? [libraryHelper, "search", libraryQuery]
       : [libraryHelper, "albums", "200"]
     albumProcess.running = true
   }
 
-  function playAlbum(id) {
-    if (albumPlayProcess.running || !id) return
-    albumPlayProcess.command = [libraryHelper, "play", String(id)]
+  function playResult(item) {
+    if (!item) return
+    if (item.kind === "playlist") { loadPlaylist(String(item.name)); return }
+    if (albumPlayProcess.running || !item.id) return
+    albumPlayProcess.command = [libraryHelper,
+      item.kind === "song" ? "play-song" : "play", String(item.id)]
     albumPlayProcess.running = true
   }
 
@@ -558,7 +569,10 @@ Item {
     command: []
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.albums = Model.parseAlbums(text)
+      onStreamFinished: {
+        root._libraryRows = Model.parseResults(text)
+        root._recomputeResults()
+      }
     }
   }
 
@@ -579,7 +593,10 @@ Item {
     command: []
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.playlists = Model.parsePlaylists(text)
+      onStreamFinished: {
+        root.playlists = Model.parsePlaylists(text)
+        root._recomputeResults()
+      }
     }
   }
 
