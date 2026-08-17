@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "github.thisisgm.cliampui",
+  "name": "Cliamp",
+  "version": "0.1.0",
+  "author": "GM",
+  "license": "MIT",
+  "description": "Cliamp in the Omarchy bar: now playing with album art, transport, output routing, and whether the signal reaching the DAC is bit-perfect.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Cliamp",
+    "description": "What is playing, where it is routed, and whether it is bit-perfect.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "statusIntervalSec": 2,
+      "followSourceRate": true,
+      "hideWhenStopped": true,
+      "cliampPath": ""
+    },
+    "schema": [
+      {
+        "key": "statusIntervalSec",
+        "type": "integer",
+        "label": "Seconds between status refreshes while the panel is open",
+        "defaultValue": 2,
+        "min": 1,
+        "max": 10
+      },
+      {
+        "key": "followSourceRate",
+        "type": "boolean",
+        "label": "Match the audio graph rate to the track",
+        "description": "Retunes PipeWire to the track's sample rate while cliamp plays, and restores it afterwards. Affects every application on this machine while music is playing.",
+        "defaultValue": true
+      },
+      {
+        "key": "hideWhenStopped",
+        "type": "boolean",
+        "label": "Hide the icon when cliamp is not running",
+        "defaultValue": true
+      },
+      {
+        "key": "cliampPath",
+        "type": "path",
+        "label": "Path to cliamp",
+        "description": "Leave empty to find cliamp on PATH.",
+        "defaultValue": ""
+      }
+    ]
+  }
+}
