@@ -77,46 +77,63 @@ Column {
     visible: text.length > 0
   }
 
-  Item { width: 1; height: Style.space(2) }
-
-  RowLayout {
+  // Built exactly as the stock audio panel builds its output volume: a section header
+  // with the value right aligned on the same line, then the slider on its own full
+  // width row inside an outlined CursorSurface.
+  Item {
     width: parent.width
-    spacing: Style.space(8)
+    implicitHeight: Math.max(volumeHeader.implicitHeight, volumeValue.implicitHeight)
 
-    Text {
+    PanelSectionHeader {
+      id: volumeHeader
       text: "VOLUME"
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      font.bold: true
-      font.letterSpacing: 1.2
-    }
-
-    PanelSlider {
-      id: volumeSlider
-      Layout.fillWidth: true
-      bar: root.bar
-      enabled: root.live
-      minimum: root.service ? root.service.volumeMinDb : -30
-      maximum: root.service ? root.service.volumeMaxDb : 6
-      step: 1
-      value: root.service ? root.service.volumeDb : 0
-      onMoved: function (v) { if (root.service) root.service.setVolume(v) }
-      // Right click returns to unity, the only gain that keeps a route bit-perfect.
-      onRightClicked: if (root.service) root.service.setVolume(0)
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
     }
 
     Text {
-      // liveValue while dragging, the bound value otherwise, exactly as the stock audio
-      // panel does it. The sign keys off the rounded value or unity prints "+0 dB".
+      id: volumeValue
+      // liveValue while dragging, the bound value otherwise, as stock does it. dB is
+      // kept rather than a percentage because 0 dB is the unity point the signal
+      // verdict turns on, and a percentage would hide it.
       text: {
         if (!root.service) return ""
         var db = Math.round(volumeSlider.dragging ? volumeSlider.liveValue : root.service.volumeDb)
         return (db > 0 ? "+" : "") + db + " dB"
       }
-      color: root.service && root.service.unityGain ? root.foreground : root.dim
+      color: Qt.darker(root.foreground, 1.4)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
+      font.bold: true
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+    }
+  }
+
+  CursorSurface {
+    width: parent.width
+    height: volumeSlider.implicitHeight + Style.spacing.controlGap
+    foreground: root.foreground
+    outline: true
+
+    PanelSlider {
+      id: volumeSlider
+      bar: root.bar
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(6)
+      anchors.rightMargin: Style.space(6)
+      minimum: root.service ? root.service.volumeMinDb : -30
+      maximum: root.service ? root.service.volumeMaxDb : 6
+      step: 1
+      value: root.service ? root.service.volumeDb : 0
+      enabled: root.live
+
+      onMoved: function (v) { if (root.service) root.service.setVolume(v) }
+      // Right click returns to unity, the only gain that keeps a route bit-perfect.
+      onRightClicked: if (root.service) root.service.setVolume(0)
     }
   }
 }

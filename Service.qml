@@ -193,13 +193,32 @@ Item {
       ipc.connected = true
       root.refreshStatus()
     }
-    onRunningChanged: if (running) goneTimer.restart(); else goneTimer.stop()
+    onRunningChanged: {
+      if (running) { goneTimer.restart(); healTimer.restart() }
+      else { goneTimer.stop(); healTimer.stop() }
+    }
   }
 
   // The socket drops for about a second on every handover. Blanking the artwork and
   // title for that window is worse than briefly showing the last known track, so the
   // state is only cleared once cliamp has genuinely stayed away.
   property int reconnectAttempts: 0
+
+  // A window manager kill can take the interactive cliamp with it and leave the unit
+  // stopped, so nothing owns the socket and the music is simply gone. The panel is the
+  // long lived thing here, so it is what puts the daemon back.
+  Timer {
+    id: healTimer
+    interval: 4000
+    repeat: false
+    onTriggered: {
+      if (ipc.connected) return
+      healProcess.command = ["systemctl", "--user", "start", "cliamp-daemon.service"]
+      healProcess.running = true
+    }
+  }
+
+  Process { id: healProcess; command: [] }
 
   Timer {
     id: goneTimer
