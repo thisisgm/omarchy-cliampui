@@ -64,7 +64,10 @@ Item {
     return safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
   }
 
-  onResolvedArtUrlChanged: if (resolvedArtUrl.length > 0) artUrl = resolvedArtUrl
+  // Held only across the gap where cliamp is unreachable, which is the socket dropping
+  // on a daemon restart. While it is running an empty value is the honest answer, so
+  // radio and local files clear the cover instead of showing the last album played.
+  onResolvedArtUrlChanged: if (running) artUrl = resolvedArtUrl
 
   readonly property real lengthSec: {
     if (status.durationSec > 0) return status.durationSec
@@ -220,37 +223,23 @@ Item {
       root.refreshStatus()
     }
     onRunningChanged: {
-      if (running) { goneTimer.restart(); healTimer.restart() }
-      else { goneTimer.stop(); healTimer.stop() }
+      if (running) goneTimer.restart()
+      else goneTimer.stop()
     }
   }
 
-  // The socket drops for about a second on every handover. Blanking the artwork and
+  // The socket drops briefly whenever the daemon restarts. Blanking the artwork and
   // title for that window is worse than briefly showing the last known track, so the
   // state is only cleared once cliamp has genuinely stayed away.
-  property int reconnectAttempts: 0
-
-  // A window manager kill can take the interactive cliamp with it and leave the unit
-  // stopped, so nothing owns the socket and the music is simply gone. The panel is the
-  // long lived thing here, so it is what puts the daemon back.
-  Timer {
-    id: healTimer
-    interval: 4000
-    repeat: false
-    onTriggered: {
-      if (ipc.connected) return
-      healProcess.command = ["systemctl", "--user", "start", "cliamp-daemon.service"]
-      healProcess.running = true
-    }
-  }
-
-  Process { id: healProcess; command: [] }
-
   Timer {
     id: goneTimer
     interval: 6000
     repeat: false
-    onTriggered: if (!ipc.connected) root.status = Model.defaultStatus()
+    onTriggered: {
+      if (ipc.connected) return
+      root.status = Model.defaultStatus()
+      root.artUrl = ""
+    }
   }
 
   // cliamp's own 10 band spectrum, the same feed its first-party widget draws. visstream
@@ -534,7 +523,7 @@ Item {
   readonly property string libraryHelper: String(Qt.resolvedUrl("cliamp-library")).replace("file://", "")
 
   function _recomputeResults() {
-    results = Model.matchPlaylists(playlists, libraryQuery, _libraryRows).concat(_libraryRows)
+    results = Model.matchPlaylists(playlists, libraryQuery).concat(_libraryRows)
   }
 
   // The library is browsed straight off the Subsonic server using the token cliamp
