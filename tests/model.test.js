@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -65,6 +65,13 @@ check("pactl rate parses", Model.sinkRateFromPactl("55\talsa_output.pci-0000_00_
 check("pactl rate 48k", Model.sinkRateFromPactl("55\tx\tPipeWire\ts32le 2ch 48000Hz\tIDLE"), 48000)
 check("pactl garbage is zero", Model.sinkRateFromPactl("nonsense"), 0)
 check("pactl empty is zero", Model.sinkRateFromPactl(""), 0)
+
+// omarchy-audio-sink-availability, one sink per line, name then a 0 or 1.
+check("availability marks a live sink", Model.parseSinkAvailability("alsa_output.x\t1"), { "alsa_output.x": true })
+check("availability marks a dead sink", Model.parseSinkAvailability("hdmi.y\t0"), { "hdmi.y": false })
+check("availability handles both", Model.parseSinkAvailability("a\t1\nb\t0"), { a: true, b: false })
+check("availability ignores junk", Model.parseSinkAvailability("nonsense\n\n"), {})
+check("availability of nothing", Model.parseSinkAvailability(""), {})
 
 check("bit-perfect when everything lines up",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC" }),

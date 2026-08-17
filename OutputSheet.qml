@@ -156,7 +156,9 @@ Column {
         color: root.verdict.ok ? root.foreground : root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
-        elide: Text.ElideRight
+        // Wrapped rather than elided: the whole value of this line is the sentence
+        // explaining why a route is not bit-perfect, and a cut one says nothing.
+        wrapMode: Text.WordWrap
       }
 
       Text {

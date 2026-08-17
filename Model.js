@@ -102,6 +102,22 @@ function sinkRateFromPactl(raw) {
   return 0
 }
 
+// Sample input, one line per sink from `omarchy-audio-sink-availability`:
+// alsa_output.pci-0000_00_1f.3.analog-stereo\t1
+// Same contract the stock audio panel parses, so an unplugged output is filtered
+// out of the device list here exactly as it is there.
+function parseSinkAvailability(raw) {
+  var next = {}
+  var lines = String(raw || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim()
+    if (!line) continue
+    var parts = line.split("\t")
+    if (parts.length >= 2) next[parts[0]] = parts[1] !== "0"
+  }
+  return next
+}
+
 function formatRate(hz) {
   var rounded = Math.round(hz / 1000 * 10) / 10
   return String(rounded) + " kHz"

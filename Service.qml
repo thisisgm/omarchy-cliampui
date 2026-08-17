@@ -140,19 +140,41 @@ Item {
     if (!panelOpen) return
     syncPosition()
     readSinkRate()
+    readSinkAvailability()
   }
 
   // ---- PipeWire routing and the signal verdict ----
 
   readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
 
+  property var sinkAvailability: ({})
+
+  // Filtered through the stock helper the first-party audio panel uses, so an output
+  // with nothing plugged into it is never offered as somewhere to send music.
   readonly property var sinks: {
     var list = []
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i]
-      if (n && n.isSink && !n.isStream) list.push(n)
+      if (!n || !n.isSink || n.isStream) continue
+      var known = sinkAvailability[String(n.name || "")]
+      if (known === false) continue
+      list.push(n)
     }
     return list
+  }
+
+  function readSinkAvailability() {
+    if (availabilityProcess.running) return
+    availabilityProcess.running = true
+  }
+
+  Process {
+    id: availabilityProcess
+    command: ["omarchy-audio-sink-availability"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.sinkAvailability = Model.parseSinkAvailability(text)
+    }
   }
 
   // cliamp reaches PipeWire through the ALSA compatibility layer, so its stream
