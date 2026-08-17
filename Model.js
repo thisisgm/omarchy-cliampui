@@ -182,6 +182,41 @@ function bluetoothCodecLabel(props) {
   return names[codec] || codec.toUpperCase()
 }
 
+// Sample input from `cliamp playlist list`, two leading spaces and a right hand count:
+//     Recently Played  8 tracks
+// A playlist saved from the Navidrome browser keeps the resolved stream URLs, which is
+// what lets a headless daemon play a library it cannot otherwise browse.
+function parsePlaylists(raw) {
+  var out = []
+  var lines = String(raw || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = trim(lines[i])
+    if (line.length === 0) continue
+
+    var suffix = ""
+    if (endsWith(line, " tracks")) suffix = " tracks"
+    else if (endsWith(line, " track")) suffix = " track"
+    else continue
+
+    var head = line.slice(0, line.length - suffix.length)
+    var cut = head.length
+    while (cut > 0 && head.charAt(cut - 1) >= "0" && head.charAt(cut - 1) <= "9") cut--
+    var count = parseInt(head.slice(cut), 10)
+    var name = trim(head.slice(0, cut))
+    if (name.length === 0 || !isFinite(count)) continue
+    out.push({ name: name, count: count })
+  }
+  return out
+}
+
+function trim(text) {
+  return String(text || "").replace(/^\s+/, "").replace(/\s+$/, "")
+}
+
+function endsWith(text, suffix) {
+  return text.length >= suffix.length && text.slice(text.length - suffix.length) === suffix
+}
+
 function formatRate(hz) {
   var rounded = Math.round(hz / 1000 * 10) / 10
   return String(rounded) + " kHz"
@@ -204,7 +239,7 @@ function verdict(v) {
   var link = String(input.lossyLink || "")
   if (link.length > 0) {
     var lead = streamRate > 0 ? formatRate(streamRate) + " · " : ""
-    return { ok: false, text: lead + link + " over Bluetooth, lossy link" }
+    return { ok: false, text: lead + link + " · lossy" }
   }
   if (streamRate <= 0 || sinkRate <= 0) {
     return { ok: false, text: "" }
@@ -212,19 +247,21 @@ function verdict(v) {
 
   var prefix = (codec ? codec + " " : "") + formatRate(streamRate)
   if (Math.abs(streamRate - sinkRate) > RATE_MATCH_TOLERANCE_HZ) {
-    var text = prefix + " · resampled to " + formatRate(sinkRate)
+    // Written as an arrow so the whole verdict stays on one line in the panel.
+    var text = formatRate(streamRate).replace(" kHz", "") + " → " + formatRate(sinkRate) + " · resampled"
     // A rate was forced and the sink took a different one: the 88.2 to 96 case on the
     // internal DAC, or AirPods on SBC-XQ which hold the link at 48 kHz. Only then is
     // the output the thing to blame, which the requested rate is what distinguishes
     // from an ordinary unforced mismatch.
     var requested = numberOr(input.requestedRate, 0)
     if (requested > 0 && Math.abs(requested - sinkRate) > RATE_MATCH_TOLERANCE_HZ) {
-      text += ", output has no " + formatRate(requested).replace(" kHz", "")
+      text = formatRate(streamRate).replace(" kHz", "") + " → " + formatRate(sinkRate)
+        + " · output has no " + formatRate(requested).replace(" kHz", "")
     }
     return { ok: false, text: text }
   }
   if (input.unityGain !== true) {
-    return { ok: false, text: prefix + " · volume applied, not bit-perfect" }
+    return { ok: false, text: prefix + " · volume applied" }
   }
   return { ok: true, text: prefix + " · bit-perfect" }
 }

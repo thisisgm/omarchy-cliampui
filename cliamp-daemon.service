@@ -1,0 +1,14 @@
+[Unit]
+Description=cliamp headless music daemon
+# PipeWire arrives with the graphical session, and so does the shell that drives this.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cliamp --daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

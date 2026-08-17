@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -102,24 +102,31 @@ check("availability handles both", Model.parseSinkAvailability("a\t1\nb\t0"), { 
 check("availability ignores junk", Model.parseSinkAvailability("nonsense\n\n"), {})
 check("availability of nothing", Model.parseSinkAvailability(""), {})
 
+// cliamp playlist list, byte for byte from the box.
+check("playlists parse", Model.parsePlaylists("  Recently Played  8 tracks"), [{ name: "Recently Played", count: 8 }])
+check("a singular track parses", Model.parsePlaylists("  Solo  1 track"), [{ name: "Solo", count: 1 }])
+check("several playlists", Model.parsePlaylists("  A  2 tracks\n  B B  10 tracks"), [{ name: "A", count: 2 }, { name: "B B", count: 10 }])
+check("a header line is ignored", Model.parsePlaylists("No playlists found."), [])
+check("empty playlist output", Model.parsePlaylists(""), [])
+
 check("bit-perfect when everything lines up",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC" }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
 
 check("resampled names both rates",
   Model.verdict({ streamRate: 44100, sinkRate: 48000, unityGain: true, transcoded: false, codec: "FLAC" }),
-  { ok: false, text: "FLAC 44.1 kHz · resampled to 48 kHz" })
+  { ok: false, text: "44.1 → 48 kHz · resampled" })
 
 // The measured trap: a force was requested, this DAC has no 88.2, PipeWire silently
 // lands on 96, and only the requested rate reveals that the DAC is what refused.
 check("nearest-rate substitution is named",
   Model.verdict({ streamRate: 88200, sinkRate: 96000, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 88200 }),
-  { ok: false, text: "FLAC 88.2 kHz · resampled to 96 kHz, output has no 88.2" })
+  { ok: false, text: "88.2 → 96 kHz · output has no 88.2" })
 
 // Same rates, but nothing was forced, so the DAC is not the thing to blame.
 check("an unforced mismatch does not blame the DAC",
   Model.verdict({ streamRate: 88200, sinkRate: 96000, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 0 }),
-  { ok: false, text: "FLAC 88.2 kHz · resampled to 96 kHz" })
+  { ok: false, text: "88.2 → 96 kHz · resampled" })
 
 check("bluez codec is named", Model.bluetoothCodecLabel({ "api.bluez5.codec": "sbc_xq" }), "SBC-XQ")
 check("aac is named", Model.bluetoothCodecLabel({ "api.bluez5.codec": "aac" }), "AAC")
@@ -130,16 +137,16 @@ check("no props, no codec", Model.bluetoothCodecLabel(null), "")
 // A2DP re-encodes, so matching the rate would still not make it bit-perfect.
 check("a bluetooth link is called lossy, not merely resampled",
   Model.verdict({ streamRate: 44100, sinkRate: 48000, unityGain: true, transcoded: false, codec: "", requestedRate: 44100, lossyLink: "SBC-XQ" }),
-  { ok: false, text: "44.1 kHz · SBC-XQ over Bluetooth, lossy link" })
+  { ok: false, text: "44.1 kHz · SBC-XQ · lossy" })
 
 check("even matched rates over bluetooth are not bit-perfect",
   Model.verdict({ streamRate: 48000, sinkRate: 48000, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 0, lossyLink: "AAC" }),
-  { ok: false, text: "48 kHz · AAC over Bluetooth, lossy link" })
+  { ok: false, text: "48 kHz · AAC · lossy" })
 
 // AirPods on SBC-XQ hold the link at 48 kHz, so a 44.1 track is refused the same way.
 check("a wired output that refuses a rate is still named",
   Model.verdict({ streamRate: 44100, sinkRate: 48000, unityGain: true, transcoded: false, codec: "", requestedRate: 44100 }),
-  { ok: false, text: "44.1 kHz · resampled to 48 kHz, output has no 44.1" })
+  { ok: false, text: "44.1 → 48 kHz · output has no 44.1" })
 
 // A force that the sink honoured is not a substitution either.
 check("an honoured force reports bit-perfect",
@@ -148,7 +155,7 @@ check("an honoured force reports bit-perfect",
 
 check("gain breaks it even when rates match",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, transcoded: false, codec: "FLAC" }),
-  { ok: false, text: "FLAC 44.1 kHz · volume applied, not bit-perfect" })
+  { ok: false, text: "FLAC 44.1 kHz · volume applied" })
 
 check("a transcoded stream can never be bit-perfect",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: true, codec: "MP3" }),

@@ -158,6 +158,7 @@ Item {
     syncPosition()
     readSinkRate()
     readSinkAvailability()
+    readPlaylists()
   }
 
   // ---- PipeWire routing and the signal verdict ----
@@ -355,6 +356,39 @@ Item {
 
   // ---- actions ----
 
+  property var playlists: []
+
+  function readPlaylists() {
+    if (playlistProcess.running) return
+    playlistProcess.command = [cliampPath, "playlist", "list"]
+    playlistProcess.running = true
+  }
+
+  Process {
+    id: playlistProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.playlists = Model.parsePlaylists(text)
+    }
+  }
+
+  // Loading a saved playlist is the only way a headless daemon can reach a Navidrome
+  // library: the playlist keeps resolved stream URLs, and the browser is TUI only.
+  function loadPlaylist(name) {
+    if (actionProcess.running || !name) return
+    actionProcess.command = [cliampPath, "load", String(name)]
+    actionProcess.running = true
+    playAfterLoad.restart()
+  }
+
+  Timer {
+    id: playAfterLoad
+    interval: 700
+    repeat: false
+    onTriggered: if (root.running) root.player.play()
+  }
+
   function setDevice(name) {
     if (actionProcess.running || !name) return
     actionProcess.command = [cliampPath, "device", String(name)]
@@ -373,8 +407,13 @@ Item {
     actionProcess.running = true
   }
 
+  // cliamp cannot attach to a running instance, so the helper stops the daemon for
+  // the life of the terminal session and starts it again afterwards. Without that,
+  // opening the player spawns a second copy that the panel cannot see.
+  readonly property string sessionHelper: String(Qt.resolvedUrl("cliamp-session")).replace("file://", "")
+
   function openPlayer() {
-    Quickshell.execDetached(["uwsm-app", "--", "alacritty", "-e", cliampPath])
+    Quickshell.execDetached(["uwsm-app", "--", "foot", "--title=cliamp", sessionHelper])
   }
 
   Process {

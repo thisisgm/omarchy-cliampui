@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Hands the IPC socket from the headless daemon to an interactive cliamp and back.
+#
+# cliamp cannot attach to a running instance. Launching it while the daemon holds the
+# socket prints "cliamp is already running" and then starts a second, IPC-less copy,
+# which is what makes the bar widget and the terminal disagree about what is playing.
+# So the daemon is stopped for exactly as long as the interactive session lasts.
+
+set -uo pipefail
+
+unit=cliamp-daemon.service
+
+was_active=0
+if systemctl --user is-active --quiet "$unit"; then
+  was_active=1
+  systemctl --user stop "$unit"
+fi
+
+cliamp "$@"
+status=$?
+
+# cliamp writes resume.json on exit, so the daemon picks the queue back up.
+if [[ $was_active -eq 1 ]]; then
+  systemctl --user start "$unit"
+fi
+
+exit "$status"

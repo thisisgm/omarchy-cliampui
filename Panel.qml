@@ -21,6 +21,7 @@ Panel {
   readonly property real seekStepSec: 5
 
   property bool sheetOpen: false
+  property bool libraryOpen: false
   property int phraseIndex: 0
   // Cursor rows only exist while the output sheet is open, so the arrows never land
   // on a control that is not currently on screen.
@@ -49,15 +50,16 @@ Panel {
   implicitHeight: button.implicitHeight
 
   function moveCursor(delta) {
-    var count = cliamp.sinks.length
+    var count = libraryOpen ? cliamp.playlists.length : cliamp.sinks.length
     if (count === 0) return
     cursorIndex = (cursorIndex + delta + count) % count
   }
 
   function activateCursor() {
-    var list = cliamp.sinks
+    var list = libraryOpen ? cliamp.playlists : cliamp.sinks
     if (cursorIndex < 0 || cursorIndex >= list.length) return
-    cliamp.setDevice(String(list[cursorIndex].name || ""))
+    if (libraryOpen) cliamp.loadPlaylist(String(list[cursorIndex].name || ""))
+    else cliamp.setDevice(String(list[cursorIndex].name || ""))
   }
 
   Service {
@@ -122,18 +124,19 @@ Panel {
       anchors.fill: parent
 
       onMoveRequested: function (dx, dy) {
-        if (root.sheetOpen && dy !== 0) { root.moveCursor(dy); return }
+        if ((root.sheetOpen || root.libraryOpen) && dy !== 0) { root.moveCursor(dy); return }
         if (dx !== 0) cliamp.seekBy(dx > 0 ? root.seekStepSec : -root.seekStepSec)
       }
       onActivateRequested: {
-        if (root.sheetOpen) root.activateCursor()
+        if (root.sheetOpen || root.libraryOpen) root.activateCursor()
         else cliamp.playPause()
       }
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
-        if (key === "o") { root.sheetOpen = !root.sheetOpen; root.cursorIndex = 0 }
+        if (key === "o") { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
+        else if (key === "l") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
         else if (key === "f") cliamp.openPlayer()
         else if (!cliamp.running) return
         else if (key === "n") cliamp.next()
@@ -173,6 +176,16 @@ Panel {
             fontFamily: root.fontFamily
           }
 
+          Playlists {
+            width: parent.width
+            service: cliamp
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            expanded: root.libraryOpen
+            cursorIndex: root.libraryOpen ? root.cursorIndex : -1
+            onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
+          }
+
           OutputSheet {
             width: parent.width
             service: cliamp
@@ -180,7 +193,7 @@ Panel {
             fontFamily: root.fontFamily
             expanded: root.sheetOpen
             cursorIndex: root.sheetOpen ? root.cursorIndex : -1
-            onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.cursorIndex = 0 }
+            onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
           }
         }
       }
@@ -188,7 +201,7 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { sheetOpen = false; return }
+    if (!opened) { sheetOpen = false; libraryOpen = false; return }
     if (panelFlick) panelFlick.contentY = 0
     cursorIndex = 0
     Qt.callLater(function () { keyCatcher.forceActiveFocus() })
