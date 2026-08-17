@@ -71,27 +71,25 @@ Column {
       spacing: Style.space(4)
       anchors.verticalCenter: parent.verticalCenter
 
-      Text {
+      MarqueeText {
         width: parent.width
         text: root.hasTrack ? root.service.title : "Cliamp"
         color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
-        elide: Text.ElideRight
+        fontFamily: root.fontFamily
+        pixelSize: Style.font.title
+        bold: true
       }
 
       // Styled exactly as PanelHero styles its meta line, so the hero reads as stock
       // even though the artwork is too large for PanelHero's icon slot.
-      Text {
+      MarqueeText {
         width: parent.width
         text: (root.hasTrack ? root.metaLine : root.phrase).toUpperCase()
         color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        font.letterSpacing: 1.2
-        elide: Text.ElideRight
+        fontFamily: root.fontFamily
+        pixelSize: Style.font.caption
+        bold: true
+        letterSpacing: 1.2
       }
 
       // cliamp's own 10 band spectrum over IPC, drawn Winamp 2 style as stacked LED

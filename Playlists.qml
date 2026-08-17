@@ -58,7 +58,7 @@ Column {
       Text {
         id: openLabel
         Layout.fillWidth: true
-        text: "Open player"
+        text: "Open cliamp"
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
