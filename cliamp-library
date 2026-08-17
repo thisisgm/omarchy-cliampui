@@ -151,8 +151,8 @@ def play_album(host, auth, album_id):
     # documented TOML format accepts http/https paths, so the file is written directly
     # and loaded, which replaces the queue without the daemon ever stopping.
     write_playlist(SCRATCH_PLAYLIST, album, songs, host, auth)
+    # Measured: load starts playback by itself, so a play here only adds a round trip.
     cliamp("load", SCRATCH_PLAYLIST)
-    cliamp("play")
     print(((album.get("artist") or "") + " - " + (album.get("name") or "")).strip(" -"))
     return 0
 
@@ -173,7 +173,6 @@ def play_song(host, auth, song_id):
     }
     write_playlist(SCRATCH_PLAYLIST, album, [song], host, auth)
     cliamp("load", SCRATCH_PLAYLIST)
-    cliamp("play")
     print(((song.get("artist") or "") + " - " + (song.get("title") or "")).strip(" -"))
     return 0
 
