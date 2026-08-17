@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseAlbums, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -124,6 +124,12 @@ check("bands clamp above one", Model.parseBands('{"ok":true,"bands":[1.4,-0.2]}'
 check("a failed frame yields nothing", Model.parseBands('{"ok":false,"error":"x"}'), [])
 check("garbage yields nothing", Model.parseBands("not json"), [])
 check("empty yields nothing", Model.parseBands(""), [])
+
+check("albums parse", Model.parseAlbums('[{"id":"a1","name":"Discovery","artist":"Daft Punk","songCount":14}]'),
+  [{ id: "a1", name: "Discovery", artist: "Daft Punk", songCount: 14 }])
+check("an album without an id is skipped", Model.parseAlbums('[{"name":"x"}]'), [])
+check("garbage albums yield nothing", Model.parseAlbums("nope"), [])
+check("empty albums", Model.parseAlbums("[]"), [])
 
 check("bit-perfect needs the source rate to agree",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),

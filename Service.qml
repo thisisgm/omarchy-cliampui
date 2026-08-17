@@ -164,6 +164,12 @@ Item {
     path: root.socketPath
     connected: true
 
+    // The socket changes owner whenever the daemon hands over to an interactive
+    // session and back. Without an explicit reconnect the panel stays bound to the
+    // instance that just exited and silently reports its last state forever, which
+    // reads as the widget and the player disagreeing.
+    onConnectionStateChanged: if (!connected) reconnectTimer.restart()
+
     parser: SplitParser {
       splitMarker: "\n"
       onRead: function (line) {
@@ -174,6 +180,32 @@ Item {
         if (parsed.ok) root.positionSec = Number(parsed.positionSec || 0)
       }
     }
+  }
+
+  Timer {
+    id: reconnectTimer
+    interval: 700
+    repeat: true
+    running: !ipc.connected
+    triggeredOnStart: true
+    onTriggered: {
+      if (ipc.connected) { running = false; return }
+      ipc.connected = true
+      root.refreshStatus()
+    }
+    onRunningChanged: if (running) goneTimer.restart(); else goneTimer.stop()
+  }
+
+  // The socket drops for about a second on every handover. Blanking the artwork and
+  // title for that window is worse than briefly showing the last known track, so the
+  // state is only cleared once cliamp has genuinely stayed away.
+  property int reconnectAttempts: 0
+
+  Timer {
+    id: goneTimer
+    interval: 6000
+    repeat: false
+    onTriggered: if (!ipc.connected) root.status = Model.defaultStatus()
   }
 
   // cliamp's own 10 band spectrum, the same feed its first-party widget draws. visstream
@@ -227,6 +259,7 @@ Item {
     readSinkRate()
     readSinkAvailability()
     readPlaylists()
+    readAlbums()
   }
 
   // ---- PipeWire routing and the signal verdict ----
@@ -443,6 +476,38 @@ Item {
   // ---- actions ----
 
   property var playlists: []
+  property var albums: []
+
+  readonly property string libraryHelper: String(Qt.resolvedUrl("cliamp-library")).replace("file://", "")
+
+  // The library is browsed straight off the Subsonic server using the token cliamp
+  // already published, so picking an album never has to stop the daemon.
+  function readAlbums() {
+    if (albumProcess.running) return
+    albumProcess.command = [libraryHelper, "albums", "200"]
+    albumProcess.running = true
+  }
+
+  function playAlbum(id) {
+    if (albumPlayProcess.running || !id) return
+    albumPlayProcess.command = [libraryHelper, "play", String(id)]
+    albumPlayProcess.running = true
+  }
+
+  Process {
+    id: albumProcess
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.albums = Model.parseAlbums(text)
+    }
+  }
+
+  Process {
+    id: albumPlayProcess
+    command: []
+    onExited: settleTimer.restart()
+  }
 
   function readPlaylists() {
     if (playlistProcess.running) return

@@ -256,6 +256,32 @@ function parseBands(raw) {
   return out
 }
 
+// Sample input, one JSON array from `cliamp-library albums`:
+// [{"id":"7tO..","name":"Discovery","artist":"Daft Punk","year":2001,"songCount":14}]
+function parseAlbums(raw) {
+  var out = []
+  var text = String(raw || "").trim()
+  if (text.length === 0) return out
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return out
+  }
+  if (!data || data.length === undefined) return out
+  for (var i = 0; i < data.length; i++) {
+    var a = data[i]
+    if (!a || !a.id) continue
+    out.push({
+      id: String(a.id),
+      name: String(a.name || ""),
+      artist: String(a.artist || ""),
+      songCount: numberOr(a.songCount, 0)
+    })
+  }
+  return out
+}
+
 function trim(text) {
   return String(text || "").replace(/^\s+/, "").replace(/\s+$/, "")
 }

@@ -19,6 +19,7 @@ Column {
 
   readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property var items: service ? service.playlists : []
+  readonly property var albums: service ? service.albums : []
 
   spacing: Style.space(8)
 
@@ -122,10 +123,102 @@ Column {
     }
   }
 
+  // The album list is browsed straight from the server, so choosing one never stops
+  // the daemon. Opening cliamp is the escape hatch, not the route.
+  CursorSurface {
+    width: parent.width
+    foreground: root.foreground
+    visible: root.albums.length > 0
+    implicitHeight: albumSummary.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.toggleRequested()
+    }
+
+    RowLayout {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        id: albumSummary
+        Layout.fillWidth: true
+        text: root.albums.length + (root.albums.length === 1 ? " album" : " albums")
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        text: root.expanded ? "⌄" : "›"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+      }
+    }
+  }
+
   Column {
     width: parent.width
     spacing: Style.space(2)
     visible: root.expanded
+
+    Repeater {
+      model: root.albums
+
+      CursorSurface {
+        width: root.width
+        foreground: root.foreground
+        hasCursor: index === root.cursorIndex
+        implicitHeight: albumLabel.implicitHeight + Style.spacing.rowPaddingX
+
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.service.playAlbum(modelData.id)
+        }
+
+        RowLayout {
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.leftMargin: Style.space(10)
+          anchors.rightMargin: Style.space(10)
+          spacing: Style.space(8)
+
+          Text {
+            id: albumLabel
+            Layout.fillWidth: true
+            text: (modelData.artist ? modelData.artist + " · " : "") + modelData.name
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
+          }
+
+          Text {
+            text: String(modelData.songCount || "")
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+        }
+      }
+    }
+  }
+
+  Column {
+    width: parent.width
+    spacing: Style.space(2)
+    visible: root.expanded && root.items.length > 1
 
     Repeater {
       model: root.items

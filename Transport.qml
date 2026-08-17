@@ -93,23 +93,25 @@ Column {
     }
 
     PanelSlider {
+      id: volumeSlider
       Layout.fillWidth: true
       bar: root.bar
       enabled: root.live
       minimum: root.service ? root.service.volumeMinDb : -30
       maximum: root.service ? root.service.volumeMaxDb : 6
       step: 1
-      value: root.service ? root.service.displayVolumeDb : 0
+      value: root.service ? root.service.volumeDb : 0
       onMoved: function (v) { if (root.service) root.service.setVolume(v) }
       // Right click returns to unity, the only gain that keeps a route bit-perfect.
       onRightClicked: if (root.service) root.service.setVolume(0)
     }
 
     Text {
-      // The sign keys off the rounded value, or a hair above zero prints "+0 dB".
+      // liveValue while dragging, the bound value otherwise, exactly as the stock audio
+      // panel does it. The sign keys off the rounded value or unity prints "+0 dB".
       text: {
         if (!root.service) return ""
-        var db = Math.round(root.service.displayVolumeDb)
+        var db = Math.round(volumeSlider.dragging ? volumeSlider.liveValue : root.service.volumeDb)
         return (db > 0 ? "+" : "") + db + " dB"
       }
       color: root.service && root.service.unityGain ? root.foreground : root.dim

@@ -1,30 +1,63 @@
 #!/bin/bash
 
-# Hands the IPC socket from the headless daemon to an interactive cliamp and back.
+# Hands the IPC socket from the headless daemon to an interactive cliamp and back,
+# carrying the music across in both directions.
 #
-# cliamp cannot attach to a running instance. Launching it while the daemon holds the
-# socket prints "cliamp is already running" and then starts a second, IPC-less copy,
-# which is what makes the bar widget and the terminal disagree about what is playing.
-# So the daemon is stopped for exactly as long as the interactive session lasts.
+# cliamp allows one instance per user: the daemon and the TUI share the socket, and
+# there is no attach. So opening the player necessarily stops the daemon. Without the
+# handover below, that alone silences whatever was playing, and quitting the TUI
+# silences it again.
 #
 # The restore runs from a trap rather than the last line, because closing the terminal
-# with a window manager binding kills this script where it stands. Without the trap the
-# daemon stays stopped and the music dies with the window.
+# with a window manager binding kills this script where it stands.
 
 set -uo pipefail
 
 unit=cliamp-daemon.service
 
-playing_now() {
-  cliamp status --json 2>/dev/null | grep -q '"state": *"playing"'
+field() {
+  cliamp status --json 2>/dev/null | python3 -c "
+import json,sys
+try:
+    print(json.load(sys.stdin).get(sys.argv[1]) or '')
+except Exception:
+    print('')
+" "$1" 2>/dev/null
+}
+
+wait_for_socket() {
+  # Polled tightly: every tenth of a second the stream is not playing is audible.
+  for _ in $(seq 1 80); do
+    cliamp status --json >/dev/null 2>&1 && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# Put playback back where it was, in whichever instance now owns the socket.
+resume_into() {
+  local playlist="$1" position="$2" state="$3"
+  wait_for_socket || return
+  [[ -n $playlist ]] && cliamp load "$playlist" >/dev/null 2>&1
+  [[ $state == playing ]] || return
+  cliamp play >/dev/null 2>&1
+  # Seek after play, or cliamp starts the track from zero.
+  if [[ -n $position && ${position%.*} -gt 2 ]]; then
+    sleep 0.2
+    cliamp seek "${position%.*}" >/dev/null 2>&1
+  fi
 }
 
 was_active=0
-was_playing=0
+playlist=""
+position=""
+state=""
 
 if systemctl --user is-active --quiet "$unit"; then
   was_active=1
-  playing_now && was_playing=1
+  playlist="$(field playlist)"
+  position="$(field position)"
+  state="$(field state)"
   systemctl --user stop "$unit"
 fi
 
@@ -32,27 +65,32 @@ restore() {
   trap - EXIT HUP TERM INT
   [[ $was_active -eq 1 ]] || exit 0
 
+  # Carry back whatever the interactive session ended on, not what it started with.
+  local out_playlist out_position out_state
+  out_playlist="$(field playlist)"
+  out_position="$(field position)"
+  out_state="$(field state)"
+  [[ -n $out_playlist ]] || out_playlist="$playlist"
+  [[ -n $out_state ]] || out_state="$state"
+
   # An abruptly closed terminal can orphan the interactive cliamp, and it would keep
-  # the socket the daemon needs, so the socket is cleared before handing it back.
+  # the socket the daemon needs.
   pkill -x cliamp 2>/dev/null
   for _ in 1 2 3 4 5; do
     pgrep -x cliamp >/dev/null || break
-    sleep 0.4
+    sleep 0.3
   done
 
   systemctl --user start "$unit"
-
-  # cliamp restores its queue from resume.json but comes back stopped, so playback is
-  # resumed only when it was actually playing before the handover.
-  if [[ $was_playing -eq 1 ]]; then
-    for _ in 1 2 3 4 5 6; do
-      cliamp status --json >/dev/null 2>&1 && break
-      sleep 0.5
-    done
-    cliamp play >/dev/null 2>&1
-  fi
+  resume_into "$out_playlist" "$out_position" "$out_state"
 }
 
 trap restore EXIT HUP TERM INT
+
+# Hand the music into the interactive session too, so opening the player does not
+# silence it while the terminal is up.
+if [[ $was_active -eq 1 ]]; then
+  ( resume_into "$playlist" "$position" "$state" ) &
+fi
 
 cliamp "$@"
