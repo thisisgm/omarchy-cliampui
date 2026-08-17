@@ -20,9 +20,6 @@ Item {
 
   readonly property real mark: size * (filled ? 0.40 : 0.5)
   readonly property real barWidth: Math.max(2, size * (filled ? 0.10 : 0.11))
-  // A right pointing triangle carries its visual mass left of its bounding box, so
-  // centering it geometrically reads as left heavy. Nudge it right to sit true.
-  readonly property real opticalNudge: mark * 0.09
   readonly property real opacityNow: !enabled ? 0.35 : (mouse.containsMouse ? 1.0 : 0.85)
 
   implicitWidth: size
@@ -61,15 +58,17 @@ Item {
     Rectangle { width: root.barWidth; height: root.mark; radius: 1; color: root.color }
   }
 
-  Item {
+  Triangle {
+    id: playMark
     anchors.centerIn: parent
-    anchors.horizontalCenterOffset: root.opticalNudge
-    width: root.mark
-    height: root.mark
+    // A triangle carries its ink a third of the way from its base, so centering the
+    // bounding box reads left heavy. This puts the painted centroid on the disc centre.
+    anchors.horizontalCenterOffset: playMark.centroidOffset
+    size: root.mark
+    ink: root.color
+    pointsRight: true
     visible: root.shape === "play"
     opacity: root.opacityNow
-
-    Triangle { size: root.mark; ink: root.color; pointsRight: true }
   }
 
   Row {
@@ -120,6 +119,7 @@ Item {
     property bool pointsRight: true
     // Slightly narrower than tall, which is how a play mark is normally drawn.
     readonly property real span: size * 0.88
+    readonly property real centroidOffset: span / 6
 
     width: span
     height: size
