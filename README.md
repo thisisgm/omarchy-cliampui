@@ -134,11 +134,12 @@ ahead of what you hear, add the difference with the lyric timing trim in setting
 in cliamp 1.63.2 skips to the next track rather than moving within it. The progress
 bar is drawn but is deliberately not interactive for streams.
 
-**Volume is not controlled here, on purpose.** cliamp stays at 0 dB, which is the only
-gain that leaves samples untouched, and anything else would cost the bit-perfect verdict.
-Use the stock Omarchy audio panel instead, where cliamp appears as
-`PipeWire ALSA [cliamp]` and can be moved on its own without touching the system volume.
-The signal line still says `volume applied` if cliamp is ever moved off unity.
+**The volume slider moves cliamp's PipeWire stream, not cliamp's own gain.** It is the
+same thing the stock audio panel moves for `PipeWire ALSA [cliamp]`, so it changes only
+this application and leaves the system volume alone. cliamp itself stays at 0 dB. Any
+attenuation alters samples wherever it is applied, so anything under 100 percent costs
+the bit-perfect verdict and the signal line says `volume applied`. Right click the
+slider to return to unity.
 
 **Rate following affects every application, not just cliamp.** The sample rate belongs
 to the whole audio graph. While your music plays at 44.1 kHz, a browser playing 48 kHz
