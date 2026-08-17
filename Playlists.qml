@@ -84,7 +84,8 @@ Column {
   CursorSurface {
     width: parent.width
     foreground: root.foreground
-    visible: root.items.length > 0
+    // cliamp maintains "Recently Played" by itself, so a single entry says nothing.
+    visible: root.items.length > 1
     implicitHeight: summaryLabel.implicitHeight + Style.spacing.rowPaddingX
 
     MouseArea {

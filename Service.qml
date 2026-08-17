@@ -462,6 +462,19 @@ Item {
     onTriggered: if (!root.send('{"cmd":"play"}') && root.running) root.player.play()
   }
 
+  // cliamp's own range. 0 dB is the only value that leaves samples untouched, which is
+  // why the slider marks it rather than treating it as just another position.
+  readonly property real volumeMinDb: -30
+  readonly property real volumeMaxDb: 6
+
+  function setVolume(db) {
+    var value = Math.max(volumeMinDb, Math.min(volumeMaxDb, Number(db) || 0))
+    if (send('{"cmd":"volume","value":' + value + '}')) { settleTimer.restart(); return }
+    if (actionProcess.running) return
+    actionProcess.command = [cliampPath, "volume", String(value)]
+    actionProcess.running = true
+  }
+
   function setDevice(name) {
     if (actionProcess.running || !name) return
     actionProcess.command = [cliampPath, "device", String(name)]

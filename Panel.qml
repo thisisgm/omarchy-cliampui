@@ -171,6 +171,7 @@ Panel {
 
           Transport {
             width: parent.width
+            bar: root.bar
             service: cliamp
             foreground: root.foreground
             fontFamily: root.fontFamily

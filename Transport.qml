@@ -1,10 +1,12 @@
 import QtQuick
+import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
 Column {
   id: root
 
+  property QtObject bar: null
   property var service: null
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
@@ -73,5 +75,41 @@ Column {
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
     visible: text.length > 0
+  }
+
+  Item { width: 1; height: Style.space(2) }
+
+  RowLayout {
+    width: parent.width
+    spacing: Style.space(8)
+
+    Text {
+      text: "VOLUME"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+      font.letterSpacing: 1.2
+    }
+
+    PanelSlider {
+      Layout.fillWidth: true
+      bar: root.bar
+      enabled: root.live
+      minimum: root.service ? root.service.volumeMinDb : -30
+      maximum: root.service ? root.service.volumeMaxDb : 6
+      step: 1
+      value: root.service ? root.service.volumeDb : 0
+      onMoved: function (v) { if (root.service) root.service.setVolume(v) }
+      // Right click returns to unity, the only gain that keeps a route bit-perfect.
+      onRightClicked: if (root.service) root.service.setVolume(0)
+    }
+
+    Text {
+      text: root.service ? (root.service.volumeDb > 0 ? "+" : "") + Math.round(root.service.volumeDb) + " dB" : ""
+      color: root.service && root.service.unityGain ? root.foreground : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
   }
 }
