@@ -224,6 +224,60 @@ function parsePlaylists(raw) {
   return out
 }
 
+// One socket carries every reply, so a message has to say what it is before it is
+// parsed. Only lyrics and status are consumed; anything else is ignored.
+function messageKind(raw) {
+  var text = String(raw || "").trim()
+  if (text.length === 0) return "none"
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return "status"
+  }
+  if (!data || typeof data !== "object") return "status"
+  if (data.lyrics !== undefined) return "lyrics"
+  if (data.history !== undefined) return "history"
+  return "status"
+}
+
+// Sample input, the reply to {"cmd":"lyrics"}, measured on the box:
+// {"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}]}
+// A track with no lyrics answers with an empty list rather than an error.
+function parseLyrics(raw) {
+  var out = []
+  var text = String(raw || "").trim()
+  if (text.length === 0) return out
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return out
+  }
+  if (!data || data.ok !== true || !data.lyrics || data.lyrics.length === undefined) return out
+  for (var i = 0; i < data.lyrics.length; i++) {
+    var line = data.lyrics[i]
+    if (!line) continue
+    var body = String(line.text || "")
+    if (body.length === 0) continue
+    out.push({ start: numberOr(line.start, 0), text: body })
+  }
+  return out
+}
+
+// The last line whose start has passed. Lyrics arrive in order, so a plain scan is
+// enough and is clearer than a bisect over a list this short.
+function activeLyricIndex(lines, positionSec) {
+  if (!lines || lines.length === undefined) return -1
+  var at = numberOr(positionSec, 0)
+  var found = -1
+  for (var i = 0; i < lines.length; i++) {
+    if (numberOr(lines[i].start, 0) > at) break
+    found = i
+  }
+  return found
+}
+
 // cliamp only accepts these output rates, so a native rate outside the set cannot be
 // played natively at all and must not be chased. 88.2 and 176.4 kHz are not in it.
 var SUPPORTED_OUTPUT_RATES = [22050, 44100, 48000, 96000, 192000]

@@ -22,6 +22,8 @@ which is what PipeWire does by default to everything.
   names the specific thing in the way.
 - **Rate following**, on by default: the audio graph is retuned to the track's sample
   rate while cliamp plays, and released the moment it stops.
+- **Synced lyrics**, resolved by cliamp and read off the same socket, with the line
+  being sung highlighted and kept in view. Collapsed, the section shows just that line.
 
 ## The signal line
 
@@ -62,6 +64,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `r` | repeat |
 | `p` | toggle rate following |
 | `l` | open the library, then type to search songs, albums and playlists |
+| `y` | open and close the lyrics |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
@@ -108,6 +111,11 @@ from the right place is not something this can offer.
 **cliamp is only launched when nothing is running.** It allows one instance per user,
 so starting it while the daemon holds the socket would create a second, IPC-less copy
 this panel cannot see. The Start row therefore appears only when the socket is free.
+
+**Lyrics are cliamp's, not this plugin's.** cliamp resolves them from embedded tags,
+then LRCLIB, then NetEase, and answers `{"cmd":"lyrics"}` on its socket with a list of
+timestamped lines. The panel only draws them, so nothing here reaches the network and
+a track with no lyrics simply has no section.
 
 **Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and seeking one
 in cliamp 1.63.2 skips to the next track rather than moving within it. The progress

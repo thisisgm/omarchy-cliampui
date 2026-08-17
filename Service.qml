@@ -182,6 +182,24 @@ Item {
     return true
   }
 
+  // cliamp resolves lyrics itself, from embedded tags then LRCLIB then NetEase, and
+  // serves them on the same socket. Undocumented, measured: {"cmd":"lyrics"} answers
+  // {"ok":true,"lyrics":[{"start":30.23,"text":"..."}]}.
+  property var lyrics: []
+  property string lyricsTrackPath: ""
+
+  readonly property bool hasLyrics: lyrics.length > 0
+  readonly property int activeLyricIndex: Model.activeLyricIndex(lyrics, positionSec)
+
+  function refreshLyrics() {
+    var path = String(status.path || "")
+    if (path.length === 0) { lyrics = []; lyricsTrackPath = ""; return }
+    if (path === lyricsTrackPath) return
+    lyricsTrackPath = path
+    lyrics = []
+    send('{"cmd":"lyrics"}')
+  }
+
   function syncPosition() {
     if (status.ok === true) positionSec = Number(status.positionSec || 0)
     else if (player && player.positionSupported) positionSec = Number(player.position || 0)
@@ -202,7 +220,11 @@ Item {
     parser: SplitParser {
       splitMarker: "\n"
       onRead: function (line) {
-        var parsed = Model.parseStatus(String(line || ""))
+        var raw = String(line || "")
+        // One socket carries every reply, and a lyrics reply has no track in it, so
+        // parsing it as a status would blank the title and the artwork.
+        if (Model.messageKind(raw) === "lyrics") { root.lyrics = Model.parseLyrics(raw); return }
+        var parsed = Model.parseStatus(raw)
         root.status = parsed
         root.lastError = parsed.ok ? "" : parsed.lastError
         // The feed carries position, so the local tick only fills the gaps between polls.
@@ -591,23 +613,17 @@ Item {
 
   // Loading a saved playlist is the only way a headless daemon can reach a Navidrome
   // library: the playlist keeps resolved stream URLs, and the browser is TUI only.
+  // Measured: load starts playing on its own, so nothing follows it here. The play that
+  // used to be sent 700 ms later was the only delayed action in the plugin.
   function loadPlaylist(name) {
     if (!name) return
     if (send('{"cmd":"load","playlist":' + JSON.stringify(String(name)) + '}')) {
-      playAfterLoad.restart()
+      settleTimer.restart()
       return
     }
     if (actionProcess.running) return
     actionProcess.command = [cliampPath, "load", String(name)]
     actionProcess.running = true
-    playAfterLoad.restart()
-  }
-
-  Timer {
-    id: playAfterLoad
-    interval: 700
-    repeat: false
-    onTriggered: if (!root.send('{"cmd":"play"}') && root.running) root.player.play()
   }
 
   // cliamp's own range. 0 dB is the only value that leaves samples untouched, which is
@@ -698,7 +714,13 @@ Item {
     }
   }
 
-  onStatusChanged: if (panelOpen) readSourceRate()
+  // One handler only. A second onStatusChanged in this object is "Property value set
+  // multiple times", which fails the whole Service and removes the widget from the bar.
+  onStatusChanged: {
+    if (!panelOpen) return
+    readSourceRate()
+    refreshLyrics()
+  }
 
   // Relaunching cliamp is the only way to change its output rate, so this is gated
   // hard: only while the daemon itself is what is running, only when the file really

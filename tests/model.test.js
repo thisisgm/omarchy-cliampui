@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, parseLyrics, activeLyricIndex, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -155,6 +155,28 @@ check("playlists filter on the query, case insensitively",
 check("searching for the scratch name still finds nothing",
   Model.matchPlaylists(saved, "cliampui"), [])
 check("no playlists is not an error", Model.matchPlaylists(null, "x"), [])
+
+// Byte for byte from the socket, the undocumented lyrics reply measured on the box.
+const lyricsReply = '{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"},{"start":33.5,"text":"Celebrate"},{"start":37,"text":"and dance so free"}]}'
+
+check("a lyrics reply is not mistaken for a status", Model.messageKind(lyricsReply), "lyrics")
+check("a status reply is a status", Model.messageKind(radio), "status")
+check("a history reply is neither", Model.messageKind('{"ok":true,"history":[]}'), "history")
+check("garbage is treated as a status, which parses it into an error", Model.messageKind("not json"), "status")
+
+check("lyrics parse", Model.parseLyrics(lyricsReply).length, 3)
+check("a lyric keeps its timestamp", Model.parseLyrics(lyricsReply)[0], { start: 30.23, text: "One more time" })
+check("a track with no lyrics is empty, not an error", Model.parseLyrics('{"ok":true,"lyrics":[]}'), [])
+check("an empty line is dropped", Model.parseLyrics('{"ok":true,"lyrics":[{"start":1,"text":""}]}'), [])
+check("garbage lyrics yield nothing", Model.parseLyrics("nope"), [])
+
+const lines = Model.parseLyrics(lyricsReply)
+check("before the first line nothing is active", Model.activeLyricIndex(lines, 10), -1)
+check("the first line activates on its timestamp", Model.activeLyricIndex(lines, 30.23), 0)
+check("the line being sung is the last one started", Model.activeLyricIndex(lines, 35), 1)
+check("the final line stays active to the end", Model.activeLyricIndex(lines, 900), 2)
+check("no lyrics means no active line", Model.activeLyricIndex([], 5), -1)
+check("a missing list is not an error", Model.activeLyricIndex(null, 5), -1)
 
 check("bit-perfect needs the source rate to agree",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: true, transcoded: false, codec: "FLAC" }),
