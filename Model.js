@@ -461,8 +461,7 @@ function verdict(v) {
       : input.playerUnity === true ? "output volume" : "volume"
     return { ok: false, text: prefix + " · " + stage + " applied" }
   }
-  // Everything after cliamp is provably clean, but the full claim needs every condition
-  // measured true, so any one of them left unread stops here rather than overstating.
+  // The claim needs the source rate, the gain, the EQ and the transcode flag all read.
   if (sourceRate <= 0 || input.unityGain !== true || input.eqFlat !== true || input.transcoded !== false) {
     return { ok: false, text: prefix + " · no resampling after cliamp" }
   }
