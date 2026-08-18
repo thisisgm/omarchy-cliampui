@@ -59,7 +59,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | --- | --- |
 | `space` / `enter` | play or pause, or pick a device when the output list is open |
 | `n` / `b` | next and back |
-| `left` / `right` | seek 5 seconds. A stream cannot be seeked, so they do nothing there |
+| `left` / `right` | seek 5 seconds. Inert on a stream, where a seek would stop playback |
 | `o` | open and close the output list |
 | `s` | shuffle |
 | `r` | repeat |
