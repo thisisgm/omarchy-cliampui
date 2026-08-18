@@ -190,10 +190,12 @@ systemctl --user restart pipewire
 ## Install
 
 ```bash
-git clone https://github.com/thisisgm/omarchy-cliampui ~/.config/omarchy/plugins/io.github.thisisgm.cliampui
-omarchy plugin enable io.github.thisisgm.cliampui
+omarchy plugin add https://github.com/thisisgm/omarchy-cliampui --enable
 omarchy bar put io.github.thisisgm.cliampui --section right
 ```
+
+`omarchy plugin add` is what keeps `omarchy plugin update` able to manage the copy
+afterwards. A hand cloned folder works but is invisible to that command.
 
 Then, once, point cliamp at your library and start the daemon:
 
@@ -213,8 +215,7 @@ play.
 ```bash
 systemctl --user disable --now cliamp-daemon.service
 rm -f ~/.local/share/systemd/user/cliamp-daemon.service
-omarchy plugin disable io.github.thisisgm.cliampui
-rm -rf ~/.config/omarchy/plugins/io.github.thisisgm.cliampui
+omarchy plugin remove io.github.thisisgm.cliampui
 ```
 
 ## Development
