@@ -69,11 +69,12 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
-Opening the library hands the keyboard to its search field. While it has focus every
-letter in the table above becomes a letter you are typing, so a track name searches
-for it rather than seeking and skipping tracks. Four keys keep their meaning there:
-`up` and `down` move the cursor, enter plays the highlighted row, and `esc` gives the
-keyboard back to the panel, where a second `esc` closes it.
+Opening the library hands the keyboard to its search field, and while that field has
+focus the panel stops watching keys at all: every key in the table above goes to the
+field instead, so typing a name with a space or an `s` in it searches rather than
+pausing and shuffling. The field answers four keys itself: `up` and `down` move the
+cursor, enter plays the highlighted row, and `esc` hands the keyboard back to the
+panel, where a second `esc` closes it.
 
 Left click opens the panel, right click plays or pauses without opening it.
 
