@@ -188,16 +188,16 @@ systemctl --user restart pipewire
 ## Install
 
 ```bash
-git clone https://github.com/thisisgm/omarchy-cliampui ~/.config/omarchy/plugins/github.thisisgm.cliampui
-omarchy plugin enable github.thisisgm.cliampui
-omarchy bar put github.thisisgm.cliampui --section right
+git clone https://github.com/thisisgm/omarchy-cliampui ~/.config/omarchy/plugins/io.github.thisisgm.cliampui
+omarchy plugin enable io.github.thisisgm.cliampui
+omarchy bar put io.github.thisisgm.cliampui --section right
 ```
 
 Then, once, point cliamp at your library and start the daemon:
 
 ```bash
 cliamp setup
-install -Dm644 ~/.config/omarchy/plugins/github.thisisgm.cliampui/cliamp-daemon.service ~/.local/share/systemd/user/cliamp-daemon.service
+install -Dm644 ~/.config/omarchy/plugins/io.github.thisisgm.cliampui/cliamp-daemon.service ~/.local/share/systemd/user/cliamp-daemon.service
 systemctl --user daemon-reload
 systemctl --user enable --now cliamp-daemon.service
 ```
@@ -211,8 +211,8 @@ play.
 ```bash
 systemctl --user disable --now cliamp-daemon.service
 rm -f ~/.local/share/systemd/user/cliamp-daemon.service
-omarchy plugin disable github.thisisgm.cliampui
-rm -rf ~/.config/omarchy/plugins/github.thisisgm.cliampui
+omarchy plugin disable io.github.thisisgm.cliampui
+rm -rf ~/.config/omarchy/plugins/io.github.thisisgm.cliampui
 ```
 
 ## Development

@@ -1,4 +1,4 @@
-# Repo rules: github.thisisgm.cliampui
+# Repo rules: io.github.thisisgm.cliampui
 
 An Omarchy Quickshell bar plugin for the cliamp terminal music player. One box, one
 user, one GPU, one monitor. Reviewers should judge against these rules, not against
