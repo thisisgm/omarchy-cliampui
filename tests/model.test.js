@@ -256,7 +256,7 @@ check("a wired output that refuses a rate is still named",
 
 // A force that the sink honoured is not a substitution either.
 check("an honoured force reports bit-perfect",
-  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: false, codec: "FLAC", requestedRate: 44100 }),
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, playerUnity: true, eqFlat: true, transcoded: false, codec: "FLAC", requestedRate: 44100 }),
   { ok: true, text: "FLAC 44.1 kHz · bit-perfect" })
 
 // cliamp calls an untouched EQ "Custom", so only the band values can be trusted.
@@ -285,6 +285,19 @@ check("a known player gain at unity blames the output stage",
 check("a moved player gain blocks the claim even if the caller says unity",
   Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, playerUnity: false, eqFlat: true, transcoded: false, codec: "FLAC" }),
   { ok: false, text: "FLAC 44.1 kHz · cliamp volume applied" })
+
+// The claim is only made when every condition was read, so an unread one stops short.
+check("an unread gain stops short of the claim rather than naming a stage",
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, eqFlat: true, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · no resampling after cliamp" })
+
+check("an unread EQ stops short of the claim",
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, playerUnity: true, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · no resampling after cliamp" })
+
+check("an unread transcode flag stops short of the claim",
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, playerUnity: true, eqFlat: true, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · no resampling after cliamp" })
 
 check("a transcoded stream can never be bit-perfect",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: true, codec: "MP3" }),

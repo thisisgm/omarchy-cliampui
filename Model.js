@@ -227,7 +227,7 @@ function parsePlaylists(raw) {
 // The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
 var NO_LYRICS_ERROR = "no lyrics found"
 
-// Sample input, the three shapes: {"ok":true,"state":"playing",..}, {"ok":true,"lyrics":[..]}, {"ok":true}
+// Sample input: {"ok":true,"state":"playing",..} {"ok":true,"lyrics":[..]} {"ok":true,"history":[..]} {"ok":true}
 // Only a status carries state; parsing an ack as one blanks the track.
 function messageKind(raw) {
   var text = String(raw || "").trim()
@@ -455,13 +455,14 @@ function verdict(v) {
   if (input.eqFlat === false) {
     return { ok: false, text: prefix + " · EQ applied" }
   }
-  if (input.unityGain !== true || input.playerUnity === false) {
+  if (input.unityGain === false || input.playerUnity === false) {
     // Named only when it is known which gain moved, because the panel can correct one.
     var stage = input.playerUnity === false ? "cliamp volume"
       : input.playerUnity === true ? "output volume" : "volume"
     return { ok: false, text: prefix + " · " + stage + " applied" }
   }
-  if (sourceRate <= 0) {
+  // The claim needs every condition measured true, so anything unread stops short of it.
+  if (sourceRate <= 0 || input.unityGain !== true || input.eqFlat !== true || input.transcoded !== false) {
     // Everything after cliamp is provably clean, but the file's rate is unknown, so
     // this stops short of the full claim rather than overstating it.
     return { ok: false, text: prefix + " · no resampling after cliamp" }
