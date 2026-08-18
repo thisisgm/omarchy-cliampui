@@ -134,6 +134,9 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      // Every letter is forwarded to a focused editor as well as to onTextKey, so a
+      // search for a track name would otherwise skip tracks and launch a terminal.
+      blocked: library.searchFocused
 
       onMoveRequested: function (dx, dy) {
         if ((root.sheetOpen || root.libraryOpen) && dy !== 0) { root.moveCursor(dy); return }
@@ -193,12 +196,15 @@ Panel {
           }
 
           Library {
+            id: library
             width: parent.width
             service: cliamp
             foreground: root.foreground
             fontFamily: root.fontFamily
             expanded: root.libraryOpen
             cursorIndex: root.libraryOpen ? root.cursorIndex : -1
+            onMoveRequested: function (delta) { root.moveCursor(delta) }
+            onActivateRequested: root.activateCursor()
             onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
           }
 

@@ -17,6 +17,14 @@ Column {
   property int cursorIndex: -1
 
   signal toggleRequested()
+  signal moveRequested(int delta)
+  signal activateRequested()
+
+  // PanelKeyCatcher runs at Keys.BeforeItem, so the panel must stand down while this
+  // field has the keyboard or every letter typed also fires a panel action.
+  readonly property bool searchFocused: search.activeFocus
+
+  onExpandedChanged: if (expanded) search.forceActiveFocus()
 
   readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property var results: service ? service.results : []
@@ -124,6 +132,13 @@ Column {
       placeholderText: "Search songs, albums and playlists"
       foreground: root.foreground
       font.family: root.fontFamily
+
+      // The catcher is standing down, so these are the panel keys worth keeping here.
+      Keys.onEscapePressed: root.focus = true
+      Keys.onUpPressed: root.moveRequested(-1)
+      Keys.onDownPressed: root.moveRequested(1)
+      Keys.onReturnPressed: root.activateRequested()
+      Keys.onEnterPressed: root.activateRequested()
 
       onTextChanged: searchDebounce.restart()
     }

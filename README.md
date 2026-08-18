@@ -59,18 +59,20 @@ back from the sink, so the panel cannot claim a route it did not get.
 | --- | --- |
 | `space` / `enter` | play or pause, or pick a device when the output list is open |
 | `n` / `b` | next and back |
-| `left` / `right` | seek 5 seconds, or move the cursor when a list is open. Does nothing on a stream, which cannot be seeked |
+| `left` / `right` | seek 5 seconds. A stream cannot be seeked, so they do nothing there |
 | `o` | open and close the output list |
 | `s` | shuffle |
 | `r` | repeat |
 | `p` | toggle rate following |
-| `l` | open the library, then type to search songs, albums and playlists |
+| `l` | open the library, which puts the keyboard in the search field |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
-The single letter actions are the panel's own, so they do nothing while the library
-search field has the keyboard: there, typing searches. `j` and `k` and the arrows move
-the cursor, enter plays the highlighted row, and `esc` closes the panel.
+Opening the library hands the keyboard to its search field, and the panel's own single
+letter actions stand down while it has focus, so typing a track name searches for it
+instead of skipping tracks. Up and down still move the cursor there, enter plays the
+highlighted row, and `esc` gives the keyboard back to the panel, where a second `esc`
+closes it.
 
 Left click opens the panel, right click plays or pauses without opening it.
 
