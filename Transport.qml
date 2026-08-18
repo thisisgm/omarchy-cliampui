@@ -134,7 +134,7 @@ Column {
       onMoved: function (v) { if (root.service) root.service.setStreamVolume(v / 100) }
       // Right click returns the stream to unity and clears mute, which is the state
       // the verdict counts as untouched. cliamp's own gain is expected to stay at 0 dB.
-      onRightClicked: if (root.service) root.service.resetStreamVolume()
+      onRightClicked: if (root.service) root.service.setStreamVolume(1)
     }
   }
 }

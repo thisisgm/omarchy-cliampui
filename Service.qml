@@ -690,20 +690,11 @@ Item {
   readonly property bool streamMuted: !!(streamNode && streamNode.audio && streamNode.audio.muted)
   readonly property bool hasStreamVolume: !!(streamNode && streamNode.audio)
 
+  // A level the operator sets is one they expect to hear, so setting one clears mute.
   function setStreamVolume(value) {
     if (!streamNode || !streamNode.audio) return
-    streamNode.audio.volume = Math.max(0, Math.min(1, Number(value) || 0))
-  }
-
-  function resetStreamVolume() {
-    if (!streamNode || !streamNode.audio) return
     streamNode.audio.muted = false
-    streamNode.audio.volume = 1
-  }
-
-  function toggleMute() {
-    if (!streamNode || !streamNode.audio) return
-    streamNode.audio.muted = !streamNode.audio.muted
+    streamNode.audio.volume = Math.max(0, Math.min(1, Number(value) || 0))
   }
 
   function setDevice(name) {
