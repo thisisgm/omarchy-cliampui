@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.thisisgm.cliampui",
   "name": "Cliamp",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "author": "GM",
   "license": "MIT",
   "description": "Cliamp in the Omarchy bar: now playing with album art, transport, output routing, and whether the signal reaching the DAC is bit-perfect.",
@@ -46,7 +46,7 @@
         "key": "followNativeRate",
         "type": "boolean",
         "label": "Relaunch cliamp at the track's native sample rate",
-        "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Off by default: the restart gaps the audio, and since cliamp cannot seek a stream, a Navidrome queue comes back at its first track.",
+        "description": "cliamp fixes its output rate at launch and cannot follow a file, so playing hi-res natively means restarting it. Off by default: the restart gaps the audio, and since cliamp cannot seek a stream, a Navidrome queue comes back at its first track. Applies while the panel is open, which is when the plugin polls cliamp.",
         "defaultValue": false
       },
       {

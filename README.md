@@ -166,11 +166,14 @@ audio is the thing being resampled instead. It is released as soon as playback s
 so the effect lasts exactly as long as the music. Turn it off in settings if that trade
 is wrong for you.
 
-**Native rate following is off by default.** cliamp fixes its output rate when it
-starts and has no command to change it, so playing a 96 kHz file natively means
-restarting the daemon. That gaps the audio, and because cliamp has no jump-to-track
-command and cannot seek a stream, a Navidrome queue comes back at its first track.
-Turn it on if you play local hi-res files and want the last resampler out of the path.
+**Native rate following is off by default, and it works while the panel is open.**
+cliamp fixes its output rate when it starts and has no command to change it, so playing
+a 96 kHz file natively means restarting the daemon. That gaps the audio, and because
+cliamp has no jump-to-track command and cannot seek a stream, a Navidrome queue comes
+back at its first track. The rate is also only chased while the panel is open, because
+that is when the plugin polls cliamp at all, so a track that changes behind a closed
+panel keeps whatever rate the daemon already had. Turn it on if you play local hi-res
+files and want the last resampler out of the path.
 
 **Bluetooth can never be bit-perfect, and that is not a Linux limitation.** A2DP
 carries SBC, AAC and similar, all lossy. AirPods offer only SBC, SBC-XQ and AAC, so
