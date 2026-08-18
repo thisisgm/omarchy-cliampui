@@ -157,6 +157,8 @@ attenuation alters samples wherever it is applied, so anything under 100 percent
 the bit-perfect verdict and the signal line says `volume applied`. Right click the
 slider to return to unity.
 
+![The output list, with the signal line under it](docs/panel-output.png)
+
 **Rate following affects every application, not just cliamp.** The sample rate belongs
 to the whole audio graph. While your music plays at 44.1 kHz, a browser playing 48 kHz
 audio is the thing being resampled instead. It is released as soon as playback stops,
