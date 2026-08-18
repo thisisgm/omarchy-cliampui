@@ -233,17 +233,19 @@ Item {
     if (send('{"cmd":"lyrics"}')) { lyricsPendingPath = path; lyricsTrackPath = path; lyricsTimeout.restart() }
   }
 
-  // cliamp answers every request, so this only fires when a reply is lost with the
-  // connection or arrives in a shape the router does not recognise. Without it the
-  // outstanding slot would stay taken and no later track would ever get lyrics.
+  // cliamp answers every request, so this only fires when a reply arrives in a shape the
+  // router does not recognise. Only the slot is freed: the track keeps its fetched mark,
+  // so one lost reply costs that track its lyrics rather than a request every 5 seconds.
   Timer {
     id: lyricsTimeout
     interval: 5000
     repeat: false
-    onTriggered: root.forgetLyricsRequest()
+    onTriggered: root.lyricsPendingPath = ""
   }
 
-  function forgetLyricsRequest() {
+  // A reply lost with the connection is worth asking for again, and only that case is.
+  function dropLyricsRequest() {
+    if (lyricsPendingPath.length === 0) return
     lyricsPendingPath = ""
     lyricsTrackPath = ""
   }
@@ -274,7 +276,7 @@ Item {
     // session and back. Without an explicit reconnect the panel stays bound to the
     // instance that just exited and silently reports its last state forever, which
     // reads as the widget and the player disagreeing.
-    onConnectionStateChanged: if (!connected) { root.forgetLyricsRequest(); reconnectTimer.restart() }
+    onConnectionStateChanged: if (!connected) { root.dropLyricsRequest(); reconnectTimer.restart() }
 
     parser: SplitParser {
       splitMarker: "\n"

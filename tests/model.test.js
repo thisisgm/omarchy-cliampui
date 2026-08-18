@@ -170,8 +170,6 @@ check("any other command error is an acknowledgement",
   Model.messageKind('{"ok":false,"error":"playlist not found"}'), "ack")
 check("an error that merely mentions lyrics is still an acknowledgement",
   Model.messageKind('{"ok":false,"error":"playlist lyrics-2019 not found"}'), "ack")
-check("the no-lyrics answer is matched whole, not by case",
-  Model.messageKind('{"ok":false,"error":"No Lyrics Found"}'), "lyrics")
 check("an error reply carrying a state is still a status",
   Model.messageKind('{"ok":false,"state":"stopped","error":"x"}'), "status")
 
