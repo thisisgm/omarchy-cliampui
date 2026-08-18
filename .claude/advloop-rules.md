@@ -86,8 +86,10 @@ general-purpose library conventions.
 - **Negative deltas work and clamp at zero.** Playing at 94.9 s, value -60 landed at
   35.9 s still playing; value -30 while paused landed exactly; value -999 landed at 0.0
   with no error and no track change.
-- **Seeking a Navidrome stream stops playback**, it does not skip to the next track.
-  Playing at 5.1 s of 544, seek answered ok and the next status read `state=stopped`
-  with no duration. `canSeek` excluding streams is therefore load bearing.
+- **Seeking a Navidrome stream skips to the next track** rather than moving within it.
+  Measured mid-queue: index 2 of 13 at 22.7 s went to index 3 at 2.2 s. On the last
+  track of a queue it presents as stopping, since there is nothing to advance to, which
+  is what an earlier single measurement here wrongly generalised. `canSeek` excluding
+  streams is load bearing either way.
 - **Navidrome ignores `timeOffset` on `format=raw`**, so there is no server side offset
   to scrub a stream with short of transcoding, which would cost the verdict.

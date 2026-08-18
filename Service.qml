@@ -75,9 +75,9 @@ Item {
     return 0
   }
 
-  // Measured on 1.63.2: seeking a Navidrome track stops playback outright, because these
-  // arrive as HTTP streams and cliamp cannot reposition one. A duration is still known,
-  // so the progress bar is drawn, but it must not be interactive.
+  // Measured on 1.63.2: seeking a Navidrome track advances the queue instead of moving
+  // within it, because these arrive as HTTP streams and cliamp cannot reposition one. A
+  // duration is still known, so the bar is drawn, but it must not be interactive.
   readonly property bool hasProgress: running && lengthSec > 0
   readonly property bool canSeek: hasProgress && !isStream
 

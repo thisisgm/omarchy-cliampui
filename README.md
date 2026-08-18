@@ -60,7 +60,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `space` / `enter` | play or pause, or pick a device when the output list is open |
 | `n` / `b` | next and back |
 | `j` / `k` / `up` / `down` | move the cursor when a list is open |
-| `h` / `l` / `left` / `right` | seek 5 seconds. Inert on a stream, where a seek would stop playback |
+| `h` / `l` / `left` / `right` | seek 5 seconds. Inert on a stream, where a seek would skip the track |
 | `o` | open and close the output list |
 | `s` | shuffle |
 | `r` | repeat |
@@ -146,9 +146,10 @@ on the far side of the radio, where no host can measure it, so if the words stil
 ahead of what you hear, add the difference with the lyric timing trim in settings.
 
 **Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and cliamp 1.63.2
-cannot reposition one: a seek stops playback outright, measured on a 544 second track
-that answered ok and then reported itself stopped. The progress bar is drawn but is
-deliberately not interactive for streams. Local files scrub normally.
+cannot reposition one. Asking it to seek one skips to the next track instead, and on the
+last track of a queue that presents as playback stopping. The progress bar is drawn from
+the duration the server reports, but it is deliberately not interactive for a stream, and
+the seek keys do nothing there. Local files scrub normally.
 
 **The volume slider moves cliamp's PipeWire stream, not cliamp's own gain.** It is the
 same thing the stock audio panel moves for `PipeWire ALSA [cliamp]`, so it changes only
