@@ -180,6 +180,7 @@ Column {
       // this draws what it already has rather than fetching anything, and it takes
       // no room at all on a track that has none.
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: root.hasTrack && text.length > 0
         text: root.service ? root.service.activeLyric : ""
@@ -249,6 +250,7 @@ Column {
 
       Text {
         id: elapsed
+        textFormat: Text.PlainText
         anchors.left: parent.left
         text: root.service ? Model.formatTime(root.service.positionSec) : "0:00"
         color: root.dim
@@ -257,6 +259,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         anchors.right: parent.right
         text: root.service ? Model.formatTime(root.service.lengthSec) : "0:00"
         color: root.dim

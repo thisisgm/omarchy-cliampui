@@ -54,6 +54,7 @@ Column {
 
       Text {
         id: summaryLabel
+        textFormat: Text.PlainText
         Layout.fillWidth: true
         text: root.service && root.service.currentSinkLabel !== ""
           ? root.service.currentSinkLabel
@@ -65,6 +66,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: root.expanded ? "⌄" : "›"
         color: root.dim
         font.family: root.fontFamily
@@ -109,6 +111,7 @@ Column {
 
           Text {
             id: deviceLabel
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: String(modelData.description || modelData.nickname || modelData.name || "")
             color: deviceRow.isCurrent ? root.foreground : root.dim
@@ -118,6 +121,7 @@ Column {
           }
 
           Text {
+            textFormat: Text.PlainText
             text: deviceRow.isCurrent ? "✓" : ""
             color: root.foreground
             font.family: root.fontFamily
@@ -151,6 +155,7 @@ Column {
 
       Text {
         id: verdictLabel
+        textFormat: Text.PlainText
         Layout.fillWidth: true
         text: root.verdict.text
         color: root.verdict.ok ? root.foreground : root.dim
@@ -162,6 +167,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: "Match rate"
         color: root.foreground
         font.family: root.fontFamily

@@ -59,6 +59,7 @@ Column {
 
     Text {
       id: countLabel
+      textFormat: Text.PlainText
       text: root.results.length > 0
         ? root.results.length + (root.results.length === 1 ? " RESULT" : " RESULTS")
         : ""
@@ -95,6 +96,7 @@ Column {
 
       Text {
         id: summaryLabel
+        textFormat: Text.PlainText
         Layout.fillWidth: true
         text: root.expanded ? "Browse" : "Browse the library"
         color: root.foreground
@@ -104,6 +106,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: "/"
         color: root.dim
         font.family: root.fontFamily
@@ -111,6 +114,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: root.expanded ? "⌄" : "›"
         color: root.dim
         font.family: root.fontFamily
@@ -196,6 +200,7 @@ Column {
 
           Text {
             id: albumLabel
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: (modelData.artist ? modelData.artist + " · " : "") + modelData.name
             color: root.foreground
@@ -206,6 +211,7 @@ Column {
 
           // The kind is the load-bearing detail once one list mixes three of them.
           Text {
+            textFormat: Text.PlainText
             text: String(modelData.kind || "").toUpperCase()
             color: root.dim
             font.family: root.fontFamily
@@ -217,6 +223,7 @@ Column {
     }
 
     Text {
+      textFormat: Text.PlainText
       width: parent.width
       text: "Nothing matched"
       color: root.dim
@@ -253,6 +260,7 @@ Column {
 
       Text {
         id: startLabel
+        textFormat: Text.PlainText
         Layout.fillWidth: true
         text: "Start cliamp"
         color: root.foreground
@@ -262,6 +270,7 @@ Column {
       }
 
       Text {
+        textFormat: Text.PlainText
         text: "f  ›"
         color: root.dim
         font.family: root.fontFamily

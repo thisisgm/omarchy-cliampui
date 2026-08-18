@@ -67,6 +67,7 @@ Column {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.horizontalCenter: parent.horizontalCenter
     // MPRIS reports HasTrackList false and the IPC has no queue read, so a count is
     // the most this panel can honestly say about what is coming next.
@@ -96,6 +97,7 @@ Column {
 
     Text {
       id: volumeValue
+      textFormat: Text.PlainText
       text: {
         if (!root.service) return ""
         if (volumeSlider.dragging) return Math.round(volumeSlider.liveValue) + "%"

@@ -24,6 +24,7 @@ Item {
   implicitHeight: label.implicitHeight
   clip: true
 
+  // Titles and artists come from the server, so markup in one must never render as rich text.
   Row {
     id: strip
     spacing: root.tailGap
@@ -31,6 +32,7 @@ Item {
 
     Text {
       id: label
+      textFormat: Text.PlainText
       text: root.text
       color: root.color
       font.family: root.fontFamily
@@ -40,6 +42,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
       text: root.text
       color: root.color
       font.family: root.fontFamily
