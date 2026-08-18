@@ -24,7 +24,7 @@ Column {
   // field has the keyboard or every letter typed also fires a panel action.
   readonly property bool searchFocused: search.activeFocus
 
-  onExpandedChanged: if (expanded) search.forceActiveFocus()
+  onExpandedChanged: expanded ? search.forceActiveFocus() : root.forceActiveFocus()
 
   readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property var results: service ? service.results : []
@@ -104,7 +104,7 @@ Column {
       }
 
       Text {
-        text: "l"
+        text: "/"
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption

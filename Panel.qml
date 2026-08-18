@@ -150,8 +150,9 @@ Panel {
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
+        // Not j, k, l, h or x: the catcher consumes those before this handler runs.
         if (key === "o") { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
-        else if (key === "l") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
+        else if (key === "/") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
         else if (key === "f") cliamp.openPlayer()
         else if (!cliamp.running) return
         else if (key === "n") cliamp.next()

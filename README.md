@@ -59,12 +59,13 @@ back from the sink, so the panel cannot claim a route it did not get.
 | --- | --- |
 | `space` / `enter` | play or pause, or pick a device when the output list is open |
 | `n` / `b` | next and back |
+| `j` / `k` | move the cursor when a list is open |
 | `left` / `right` | seek 5 seconds. Inert on a stream, where a seek would stop playback |
 | `o` | open and close the output list |
 | `s` | shuffle |
 | `r` | repeat |
 | `p` | toggle rate following |
-| `l` | open the library, which puts the keyboard in the search field |
+| `/` | open the library, which puts the keyboard in the search field |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
