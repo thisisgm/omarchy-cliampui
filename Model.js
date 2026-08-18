@@ -227,10 +227,7 @@ function parsePlaylists(raw) {
 // The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
 var NO_LYRICS_ERROR = "no lyrics found"
 
-// Sample replies, all measured on the socket:
-//   status  {"ok":true,"state":"playing","track":{..},"position":12.3,..}
-//   lyrics  {"ok":true,"lyrics":[{"start":30.23,"text":".."}]}
-//   ack     {"ok":true}   {"ok":true,"shuffle":false}   {"ok":false,"error":".."}
+// Sample input, the three shapes: {"ok":true,"state":"playing",..}, {"ok":true,"lyrics":[..]}, {"ok":true}
 // Only a status carries state; parsing an ack as one blanks the track.
 function messageKind(raw) {
   var text = String(raw || "").trim()
@@ -458,9 +455,10 @@ function verdict(v) {
   if (input.eqFlat === false) {
     return { ok: false, text: prefix + " · EQ applied" }
   }
-  if (input.unityGain !== true) {
-    // Which gain moved is actionable: the panel slider only moves the stream one.
-    var stage = input.playerUnity === false ? "cliamp volume" : "output volume"
+  if (input.unityGain !== true || input.playerUnity === false) {
+    // Named only when it is known which gain moved, because the panel can correct one.
+    var stage = input.playerUnity === false ? "cliamp volume"
+      : input.playerUnity === true ? "output volume" : "volume"
     return { ok: false, text: prefix + " · " + stage + " applied" }
   }
   if (sourceRate <= 0) {

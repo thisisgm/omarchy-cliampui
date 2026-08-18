@@ -133,14 +133,16 @@ check("an album row parses", Model.parseResults(mixed)[0],
   { kind: "album", id: "a1", name: "Discovery", artist: "Daft Punk", album: "", songCount: 14, duration: 0 })
 check("a song row parses", Model.parseResults(mixed)[1],
   { kind: "song", id: "s1", name: "One More Time", artist: "Daft Punk", album: "Discovery", songCount: 0, duration: 320 })
-check("an untagged row is an album", Model.parseResults('[{"id":"a1","name":"x"}]')[0].kind, "album")
-check("an unknown kind falls back to album", Model.parseResults('[{"kind":"artist","id":"a1","name":"x"}]')[0].kind, "album")
+check("an untagged row is an album",
+  Model.parseResults('[{"id":"a1","name":"x"}]').map(function (r) { return r.kind }), ["album"])
+check("an unknown kind falls back to album",
+  Model.parseResults('[{"kind":"artist","id":"a1","name":"x"}]').map(function (r) { return r.kind }), ["album"])
 check("a row without an id is skipped", Model.parseResults('[{"name":"x"}]'), [])
 check("garbage results yield nothing", Model.parseResults("nope"), [])
 check("empty results", Model.parseResults("[]"), [])
 
-// cliampui is the scratch playlist every play overwrites, never a row.
-const saved = [{ name: "Recently Played", count: 55 }, { name: "cliampui", count: 12 }]
+// Built by the real producer, so a field rename in parsePlaylists breaks this too.
+const saved = Model.parsePlaylists("  Recently Played  55 tracks\n  cliampui  12 tracks\n")
 
 check("the scratch playlist is never a row",
   Model.matchPlaylists(saved, "").map(function (r) { return r.name }),
@@ -268,12 +270,20 @@ check("EQ breaks it even when rates and gain are right",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: false, transcoded: false, codec: "FLAC" }),
   { ok: false, text: "FLAC 44.1 kHz · EQ applied" })
 
-check("gain breaks it even when rates match, and the stream gain is the default blame",
+check("an unmeasured stage is not named, it is just volume",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, transcoded: false, codec: "FLAC" }),
-  { ok: false, text: "FLAC 44.1 kHz · output volume applied" })
+  { ok: false, text: "FLAC 44.1 kHz · volume applied" })
 
 check("cliamp's own gain is named, because the panel slider cannot correct it",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, playerUnity: false, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · cliamp volume applied" })
+
+check("a known player gain at unity blames the output stage",
+  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, playerUnity: true, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · output volume applied" })
+
+check("a moved player gain blocks the claim even if the caller says unity",
+  Model.verdict({ sourceRate: 44100, streamRate: 44100, sinkRate: 44100, unityGain: true, playerUnity: false, eqFlat: true, transcoded: false, codec: "FLAC" }),
   { ok: false, text: "FLAC 44.1 kHz · cliamp volume applied" })
 
 check("a transcoded stream can never be bit-perfect",
