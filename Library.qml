@@ -136,8 +136,8 @@ Column {
     }
 
     // The list scrolls inside its own bounds, so the wheel over it moves rows rather
-    // than the whole panel. ListView is used over a Repeater because currentIndex plus
-    // positionViewAtIndex is what keeps the j/k cursor on screen in a list this long.
+    // than the whole panel. ListView is used over a Repeater for positionViewAtIndex,
+    // which is what keeps the j/k cursor on screen in a list this long.
     ListView {
       id: albumList
       width: parent.width

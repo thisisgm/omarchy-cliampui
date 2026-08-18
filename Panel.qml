@@ -67,6 +67,10 @@ Panel {
     id: cliamp
     settings: root.settings
     panelOpen: root.opened
+
+    // A keystroke narrows the search under the cursor, and an index past the end
+    // highlights no row while enter quietly does nothing, so it goes back to the top.
+    onResultsChanged: if (root.cursorIndex >= cliamp.results.length) root.cursorIndex = 0
   }
 
   Timer {

@@ -59,7 +59,7 @@ back from the sink, so the panel cannot claim a route it did not get.
 | --- | --- |
 | `space` / `enter` | play or pause, or pick a device when the output list is open |
 | `n` / `b` | next and back |
-| `left` / `right` | seek 5 seconds, or move the cursor when the output list is open |
+| `left` / `right` | seek 5 seconds, or move the cursor when a list is open. Does nothing on a stream, which cannot be seeked |
 | `o` | open and close the output list |
 | `s` | shuffle |
 | `r` | repeat |
@@ -67,6 +67,10 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `l` | open the library, then type to search songs, albums and playlists |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
+
+The single letter actions are the panel's own, so they do nothing while the library
+search field has the keyboard: there, typing searches. `j` and `k` and the arrows move
+the cursor, enter plays the highlighted row, and `esc` closes the panel.
 
 Left click opens the panel, right click plays or pauses without opening it.
 
@@ -97,11 +101,18 @@ Library section and it plays with nothing else open.
 
 **The library is browsed in the panel, not in a terminal.** cliamp publishes the
 current stream URL in its status, and that URL carries a salted Subsonic token, so
-the panel reaches `getAlbumList2`, `getAlbum`, `getSong` and `search3` with it. No
-credential is ever handled here. Choosing a row overwrites one scratch playlist and
+the panel reaches `getAlbumList2`, `getAlbum`, `getSong` and `search3` with it. Your
+password is never handled here and never asked for. The token itself is a credential,
+and it is the one cliamp already publishes and already writes into the playlist files
+it saves, so nothing new is exposed and nothing is cached by this plugin.
+
+Choosing an album or a song overwrites a single scratch playlist named `cliampui` and
 loads it, which replaces the queue in place, so the daemon never stops and the music
-never pauses to let you pick something. It is a single reused file, so browsing does
-not leave a playlist behind every time you press something.
+never pauses to let you pick something. Reusing one file means browsing does not leave
+a playlist behind every time you press something, at the cost of one reserved name: a
+saved playlist called `cliampui` would be overwritten, so that name is hidden from the
+browse list. Choosing a saved playlist row loads that playlist directly and writes
+nothing.
 
 **Browsing works before anything is playing.** The token is borrowed from whatever
 cliamp is streaming, so a daemon that just started has none to lend. The playlists on
