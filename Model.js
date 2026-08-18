@@ -442,7 +442,9 @@ function verdict(v) {
     return { ok: false, text: prefix + " · EQ applied" }
   }
   if (input.unityGain !== true) {
-    return { ok: false, text: prefix + " · volume applied" }
+    // Which gain moved is actionable: the panel slider only moves the stream one.
+    var stage = input.playerUnity === false ? "cliamp volume" : "output volume"
+    return { ok: false, text: prefix + " · " + stage + " applied" }
   }
   if (sourceRate <= 0) {
     // Everything after cliamp is provably clean, but the file's rate is unknown, so

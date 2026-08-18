@@ -458,7 +458,8 @@ Item {
     : (codec === "MP3" || codec === "OGG" || codec === "OPUS")
   // Any attenuation alters samples, so only an exact 0 dB counts. Setting volume over
   // MPRIS lands on -0.02 dB, which really is not unity and must not pass.
-  readonly property bool unityGain: Math.abs(volumeDb) < 0.001
+  readonly property bool playerUnity: Math.abs(volumeDb) < 0.001
+  readonly property bool unityGain: playerUnity
     && (!hasStreamVolume || (!streamMuted && Math.abs(streamVolume - 1) < 0.001))
   readonly property bool eqFlat: status.eqFlat !== false
 
@@ -471,6 +472,7 @@ Item {
     streamRate: streamRate,
     sinkRate: sinkRate,
     unityGain: unityGain,
+    playerUnity: playerUnity,
     eqFlat: eqFlat,
     transcoded: transcoded,
     codec: codec,
@@ -691,6 +693,12 @@ Item {
   function setStreamVolume(value) {
     if (!streamNode || !streamNode.audio) return
     streamNode.audio.volume = Math.max(0, Math.min(1, Number(value) || 0))
+  }
+
+  function resetStreamVolume() {
+    if (!streamNode || !streamNode.audio) return
+    streamNode.audio.muted = false
+    streamNode.audio.volume = 1
   }
 
   function toggleMute() {

@@ -83,7 +83,7 @@ Column {
   Item {
     width: parent.width
     implicitHeight: Math.max(volumeHeader.implicitHeight, volumeValue.implicitHeight)
-    visible: root.service && root.service.hasStreamVolume
+    visible: !!(root.service && root.service.hasStreamVolume)
 
     PanelSectionHeader {
       id: volumeHeader
@@ -98,9 +98,9 @@ Column {
       id: volumeValue
       text: {
         if (!root.service) return ""
+        if (volumeSlider.dragging) return Math.round(volumeSlider.liveValue) + "%"
         if (root.service.streamMuted) return "MUTED"
-        var live = volumeSlider.dragging ? volumeSlider.liveValue : root.service.streamVolume * 100
-        return Math.round(live) + "%"
+        return Math.round(root.service.streamVolume * 100) + "%"
       }
       color: Qt.darker(root.foreground, 1.4)
       font.family: root.fontFamily
@@ -117,7 +117,7 @@ Column {
     height: volumeSlider.implicitHeight + Style.spacing.controlGap
     foreground: root.foreground
     outline: true
-    visible: root.service && root.service.hasStreamVolume
+    visible: !!(root.service && root.service.hasStreamVolume)
 
     PanelSlider {
       id: volumeSlider
@@ -132,8 +132,9 @@ Column {
       enabled: root.live
 
       onMoved: function (v) { if (root.service) root.service.setStreamVolume(v / 100) }
-      // Right click returns to unity, the only gain that keeps a route bit-perfect.
-      onRightClicked: if (root.service) root.service.setStreamVolume(1)
+      // Right click returns the stream to unity and clears mute, which is the state
+      // the verdict counts as untouched. cliamp's own gain is expected to stay at 0 dB.
+      onRightClicked: if (root.service) root.service.resetStreamVolume()
     }
   }
 }

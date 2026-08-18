@@ -163,7 +163,9 @@ Panel {
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        // Indicator only: an interactive bar lays a hit strip over content the
+        // keyboard already reaches, and the library list scrolls itself.
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; interactive: false }
 
         Column {
           id: column

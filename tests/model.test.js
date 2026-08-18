@@ -254,9 +254,13 @@ check("EQ breaks it even when rates and gain are right",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: false, transcoded: false, codec: "FLAC" }),
   { ok: false, text: "FLAC 44.1 kHz · EQ applied" })
 
-check("gain breaks it even when rates match",
+check("gain breaks it even when rates match, and the stream gain is the default blame",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, transcoded: false, codec: "FLAC" }),
-  { ok: false, text: "FLAC 44.1 kHz · volume applied" })
+  { ok: false, text: "FLAC 44.1 kHz · output volume applied" })
+
+check("cliamp's own gain is named, because the panel slider cannot correct it",
+  Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: false, playerUnity: false, transcoded: false, codec: "FLAC" }),
+  { ok: false, text: "FLAC 44.1 kHz · cliamp volume applied" })
 
 check("a transcoded stream can never be bit-perfect",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, transcoded: true, codec: "MP3" }),
