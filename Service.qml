@@ -75,9 +75,9 @@ Item {
     return 0
   }
 
-  // Measured: seeking a Navidrome track skips to the next one rather than moving within
-  // it, because these arrive as HTTP streams and cliamp cannot seek them. A duration is
-  // still known, so the progress bar is drawn, but it must not be interactive.
+  // Measured on 1.63.2: seeking a Navidrome track stops playback outright, because these
+  // arrive as HTTP streams and cliamp cannot reposition one. A duration is still known,
+  // so the progress bar is drawn, but it must not be interactive.
   readonly property bool hasProgress: running && lengthSec > 0
   readonly property bool canSeek: hasProgress && !isStream
 
@@ -152,14 +152,15 @@ Item {
     if (running) player.previous()
   }
 
-  // The socket takes an absolute seek. MPRIS only offers a relative one, and computing
-  // that delta from a locally interpolated position lands in the wrong place, which is
-  // what made scrubbing feel broken. MPRIS stays as the fallback.
+  // Measured on 1.63.2: the socket seek takes a delta, not a position, whatever
+  // `cliamp seek --help` says. The delta comes off the interpolated position rather than
+  // the last polled one, which is up to a whole poll interval stale. MPRIS is the fallback.
   function seekTo(targetSec) {
     if (!canSeek) return
     var target = Math.max(0, Math.min(lengthSec, Number(targetSec) || 0))
+    var delta = Math.round(target - positionSec)
     positionSec = target
-    if (send('{"cmd":"seek","value":' + Math.round(target) + '}')) { settleTimer.restart(); return }
+    if (send('{"cmd":"seek","value":' + delta + '}')) { settleTimer.restart(); return }
     if (player) player.seek(target - Number(player.position || 0))
   }
 
