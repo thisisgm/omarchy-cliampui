@@ -12,6 +12,10 @@ Item {
   // The panel writes this so nothing polls while the popup is shut.
   property bool panelOpen: false
 
+  // Rate following has to notice a track change with nothing on screen, so it is the
+  // second consumer of cliamp's status and keeps the poll alive on its own.
+  readonly property bool wantsStatus: panelOpen || followNativeRate
+
   property var status: Model.defaultStatus()
   property string lastError: ""
 
@@ -177,16 +181,16 @@ Item {
   readonly property string socketPath: (Quickshell.env("HOME") || "") + "/.config/cliamp/cliamp.sock"
 
   function refreshStatus() {
-    if (!ipc.connected) return
-    ipc.write('{"cmd":"status"}\n')
-    ipc.flush()
+    if (!ipcConnected) return
+    ipcLoader.item.write('{"cmd":"status"}\n')
+    ipcLoader.item.flush()
   }
 
   // Every verb the docs define on the socket goes the same way.
   function send(payload) {
-    if (!ipc.connected) return false
-    ipc.write(payload + "\n")
-    ipc.flush()
+    if (!ipcConnected) return false
+    ipcLoader.item.write(payload + "\n")
+    ipcLoader.item.flush()
     return true
   }
 
@@ -273,33 +277,42 @@ Item {
     if (panelOpen) refreshStatus()
   }
 
-  Socket {
-    id: ipc
-    path: root.socketPath
-    connected: true
+  // The socket changes owner whenever the daemon relaunches or hands over to an
+  // interactive session. Measured on Quickshell 0.3.0: one connect against a missing
+  // path (ServerNotFoundError) bricks a Socket for good, and no later write to
+  // connected or path ever tries again, so every retry has to be a brand new Socket.
+  readonly property bool ipcConnected: !!(ipcLoader.item && ipcLoader.item.connected)
 
-    // The socket changes owner whenever the daemon hands over to an interactive
-    // session and back. Without an explicit reconnect the panel stays bound to the
-    // instance that just exited and silently reports its last state forever, which
-    // reads as the widget and the player disagreeing.
-    onConnectionStateChanged: if (!connected) { root.dropLyricsRequest(); reconnectTimer.restart() }
+  Loader {
+    id: ipcLoader
+    active: true
+    sourceComponent: Socket {
+      path: root.socketPath
+      connected: true
 
-    parser: SplitParser {
-      splitMarker: "\n"
-      onRead: function (line) {
-        var raw = String(line || "")
-        var kind = Model.messageKind(raw)
-        // Every command answers on this socket too, and an acknowledgement carries no
-        // track, so parsing one as a status blanked the panel until the next poll.
-        // An acknowledgement that failed is the only report a command ever gets.
-        if (kind === "lyrics") { root.acceptLyrics(raw); return }
-        if (kind === "ack") { root.lastError = Model.ackError(raw); return }
-        if (kind !== "status") return
-        var parsed = Model.parseStatus(raw)
-        root.status = parsed
-        root.lastError = parsed.ok ? "" : parsed.lastError
-        // The feed carries position, so the local tick only fills the gaps between polls.
-        if (parsed.ok) root.positionSec = Number(parsed.positionSec || 0)
+      // On connect ask for status at once; on drop abandon the lyrics request in flight.
+      onConnectionStateChanged: {
+        if (connected) { root.refreshStatus(); return }
+        root.dropLyricsRequest()
+      }
+
+      parser: SplitParser {
+        splitMarker: "\n"
+        onRead: function (line) {
+          var raw = String(line || "")
+          var kind = Model.messageKind(raw)
+          // Every command answers on this socket too, and an acknowledgement carries no
+          // track, so parsing one as a status blanked the panel until the next poll.
+          // An acknowledgement that failed is the only report a command ever gets.
+          if (kind === "lyrics") { root.acceptLyrics(raw); return }
+          if (kind === "ack") { root.lastError = Model.ackError(raw); return }
+          if (kind !== "status") return
+          var parsed = Model.parseStatus(raw)
+          root.status = parsed
+          root.lastError = parsed.ok ? "" : parsed.lastError
+          // The feed carries position, so the local tick only fills the gaps between polls.
+          if (parsed.ok) root.positionSec = Number(parsed.positionSec || 0)
+        }
       }
     }
   }
@@ -308,12 +321,13 @@ Item {
     id: reconnectTimer
     interval: 700
     repeat: true
-    running: !ipc.connected
-    triggeredOnStart: true
+    // No assignment to running anywhere: the binding is the only thing that can stop
+    // this, so a later disconnect can always start it again.
+    running: !root.ipcConnected
     onTriggered: {
-      if (ipc.connected) { running = false; return }
-      ipc.connected = true
-      root.refreshStatus()
+      if (root.ipcConnected) return
+      ipcLoader.active = false
+      ipcLoader.active = true
     }
     onRunningChanged: {
       if (running) goneTimer.restart()
@@ -329,7 +343,7 @@ Item {
     interval: 6000
     repeat: false
     onTriggered: {
-      if (ipc.connected) return
+      if (root.ipcConnected) return
       root.status = Model.defaultStatus()
       root.artUrl = ""
     }
@@ -359,7 +373,7 @@ Item {
     id: statusTimer
     interval: root.statusIntervalMs
     repeat: true
-    running: root.panelOpen && ipc.connected
+    running: root.wantsStatus && root.ipcConnected
     triggeredOnStart: true
     onTriggered: root.refreshStatus()
   }
@@ -615,6 +629,10 @@ Item {
   onStreamRateChanged: {
     if (followSourceRate && isPlaying) matchRate()
     else rateSettleTimer.restart()
+    // The node is destroyed and remade by a daemon relaunch, so this always fires
+    // after one. That re-check is what settles a track change that happened while
+    // the relaunch helper was still running and its change event was swallowed.
+    considerNativeRate()
   }
 
   Component.onDestruction: releaseRate()
@@ -796,9 +814,10 @@ Item {
   // One handler only. A second onStatusChanged in this object is "Property value set
   // multiple times", which fails the whole Service and removes the widget from the bar.
   onStatusChanged: {
-    if (!panelOpen) return
+    if (!wantsStatus) return
     readSourceRate()
-    refreshLyrics()
+    // Nobody reads lyrics behind a shut panel, so that half stays panel only.
+    if (panelOpen) refreshLyrics()
   }
 
   // Relaunching cliamp is the only way to change its output rate, so this is gated
@@ -823,7 +842,10 @@ Item {
   Process {
     id: nativeRateProcess
     command: []
-    onExited: settleTimer.restart()
+    // Re-check on exit as well: a track change during the relaunch is swallowed by
+    // the running guard, and the stream node can settle before or after this exit,
+    // so both this and onStreamRateChanged re-evaluate and the guards dedupe them.
+    onExited: { settleTimer.restart(); root.considerNativeRate() }
   }
 
   // No socket handover any more. cliamp allows one instance per user, so this is only
