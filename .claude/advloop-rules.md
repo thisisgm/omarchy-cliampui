@@ -81,3 +81,13 @@ general-purpose library conventions.
 - **ListView writes `currentIndex` itself on every model reassignment**, which breaks a
   QML binding to it for good. The library cursor is therefore driven from the panel's
   own `cursorIndex`, never from `ListView.currentIndex` or `ListView.isCurrentItem`.
+- **The socket seek takes a delta, not a position**, whatever `cliamp seek --help` says.
+  Paused at 4.9 s, `{"cmd":"seek","value":60}` landed at 64.9 s.
+- **Negative deltas work and clamp at zero.** Playing at 94.9 s, value -60 landed at
+  35.9 s still playing; value -30 while paused landed exactly; value -999 landed at 0.0
+  with no error and no track change.
+- **Seeking a Navidrome stream stops playback**, it does not skip to the next track.
+  Playing at 5.1 s of 544, seek answered ok and the next status read `state=stopped`
+  with no duration. `canSeek` excluding streams is therefore load bearing.
+- **Navidrome ignores `timeOffset` on `format=raw`**, so there is no server side offset
+  to scrub a stream with short of transcoding, which would cost the verdict.
