@@ -14,7 +14,7 @@ Panel {
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool hideWhenStopped: setting("hideWhenStopped", true) === true
+  readonly property bool hideWhenStopped: Model.asBool(setting("hideWhenStopped", true), true)
   readonly property color barIconColor: cliamp.isPlaying
     ? root.barForeground
     : Qt.darker(root.barForeground, 1.55)

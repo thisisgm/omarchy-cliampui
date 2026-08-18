@@ -224,6 +224,14 @@ function parsePlaylists(raw) {
   return out
 }
 
+// Sample input, what `omarchy bar set` stores without --json: the string "true", not a boolean.
+function asBool(value, fallback) {
+  if (value === true || value === false) return value
+  if (value === "true") return true
+  if (value === "false") return false
+  return fallback
+}
+
 // The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
 var NO_LYRICS_ERROR = "no lyrics found"
 

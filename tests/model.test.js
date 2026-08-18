@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -174,6 +174,13 @@ check("an error that merely mentions lyrics is still an acknowledgement",
   Model.messageKind('{"ok":false,"error":"playlist lyrics-2019 not found"}'), "ack")
 check("an error reply carrying a state is still a status",
   Model.messageKind('{"ok":false,"state":"stopped","error":"x"}'), "status")
+
+// `omarchy bar set <id> <key> true` stores the string, not the boolean, without --json.
+check("the string the bar CLI writes counts as true", Model.asBool("true", false), true)
+check("and its opposite counts as false", Model.asBool("false", true), false)
+check("a real boolean is passed through", Model.asBool(true, false), true)
+check("an unset setting takes the fallback", Model.asBool(undefined, true), true)
+check("anything else takes the fallback", Model.asBool("yes", false), false)
 
 check("a failed acknowledgement gives up its error",
   Model.ackError('{"ok":false,"error":"playlist not found"}'), "playlist not found")

@@ -97,6 +97,12 @@ Item {
     return value === undefined || value === null ? fallback : value
   }
 
+  // `omarchy bar set` stores a bare value as a string unless it is given --json, so the
+  // documented way to flip one of these settings would otherwise be silently ignored.
+  function boolSetting(name, fallback) {
+    return Model.asBool(setting(name, fallback), fallback)
+  }
+
   // Re-clamped on read so a hand-edited shell.json cannot poison the timer.
   function intSetting(name, fallback, min, max) {
     var value = parseInt(setting(name, fallback), 10)
@@ -566,7 +572,7 @@ Item {
 
   // ---- rate following ----
 
-  readonly property bool followSourceRate: setting("followSourceRate", true) === true
+  readonly property bool followSourceRate: boolSetting("followSourceRate", true)
   property int forcedRate: 0
 
   function matchRate() {
@@ -753,7 +759,7 @@ Item {
   // opening the player spawns a second copy that the panel cannot see.
   property int sourceRate: 0
 
-  readonly property bool followNativeRate: setting("followNativeRate", false) === true
+  readonly property bool followNativeRate: boolSetting("followNativeRate", false)
   readonly property string nativeRateHelper: String(Qt.resolvedUrl("cliamp-daemon-rate-apply")).replace("file://", "")
   // The rate already asked for, so an output the hardware or cliamp refuses is not
   // requested again in a loop on every status poll.
