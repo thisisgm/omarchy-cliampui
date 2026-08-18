@@ -234,6 +234,11 @@ deno run --allow-read tests/model.test.js
 The fixtures are lines a running cliamp actually printed, including the 88.2 kHz
 substitution this machine performs.
 
+## Support
+
+If this saved you an afternoon, you can
+[buy me a coffee](https://buymeacoffee.com/thisisgm).
+
 ## License
 
 MIT
