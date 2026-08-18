@@ -229,6 +229,9 @@ function parsePlaylists(raw) {
 //   lyrics  {"ok":true,"lyrics":[{"start":30.23,"text":".."}]}
 //   ack     {"ok":true}   {"ok":true,"shuffle":false}   {"ok":false,"error":".."}
 // Only a status carries state; parsing an ack as one blanks the track.
+// The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
+var NO_LYRICS_ERROR = "no lyrics found"
+
 function messageKind(raw) {
   var text = String(raw || "").trim()
   if (text.length === 0) return "none"
@@ -240,8 +243,9 @@ function messageKind(raw) {
   }
   if (!data || typeof data !== "object") return "ack"
   if (data.lyrics !== undefined) return "lyrics"
-  // A track with no lyrics answers an error, not an empty list, and it is still that reply.
-  if (data.ok === false && String(data.error || "").indexOf("lyric") >= 0) return "lyrics"
+  // A track with no lyrics answers this exact error, not an empty list, and it is still
+  // that reply. Matched whole, so a command error naming a file cannot be swallowed.
+  if (data.ok === false && String(data.error || "").trim().toLowerCase() === NO_LYRICS_ERROR) return "lyrics"
   if (data.history !== undefined) return "history"
   if (data.state !== undefined) return "status"
   return "ack"

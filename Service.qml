@@ -230,12 +230,28 @@ Item {
     if (lyricsPendingPath.length > 0) return
     // Marked fetched only once the request is actually out, or one dropped write
     // suppresses every retry for the rest of the track.
-    if (send('{"cmd":"lyrics"}')) { lyricsPendingPath = path; lyricsTrackPath = path }
+    if (send('{"cmd":"lyrics"}')) { lyricsPendingPath = path; lyricsTrackPath = path; lyricsTimeout.restart() }
+  }
+
+  // cliamp answers every request, so this only fires when a reply is lost with the
+  // connection or arrives in a shape the router does not recognise. Without it the
+  // outstanding slot would stay taken and no later track would ever get lyrics.
+  Timer {
+    id: lyricsTimeout
+    interval: 5000
+    repeat: false
+    onTriggered: root.forgetLyricsRequest()
+  }
+
+  function forgetLyricsRequest() {
+    lyricsPendingPath = ""
+    lyricsTrackPath = ""
   }
 
   function acceptLyrics(raw) {
     var wanted = lyricsPendingPath
     lyricsPendingPath = ""
+    lyricsTimeout.stop()
     if (wanted === String(status.path || "")) { lyrics = Model.parseLyrics(raw); return }
     // The track changed while this was in flight, so it answers a question nobody is
     // asking now. Re-arm and ask again for whatever is playing.
@@ -258,7 +274,7 @@ Item {
     // session and back. Without an explicit reconnect the panel stays bound to the
     // instance that just exited and silently reports its last state forever, which
     // reads as the widget and the player disagreeing.
-    onConnectionStateChanged: if (!connected) { root.lyricsPendingPath = ""; reconnectTimer.restart() }
+    onConnectionStateChanged: if (!connected) { root.forgetLyricsRequest(); reconnectTimer.restart() }
 
     parser: SplitParser {
       splitMarker: "\n"
