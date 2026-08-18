@@ -130,9 +130,10 @@ subtracted automatically and re-read whenever the output changes. A headset also
 on the far side of the radio, where no host can measure it, so if the words still run
 ahead of what you hear, add the difference with the lyric timing trim in settings.
 
-**Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and seeking one
-in cliamp 1.63.2 skips to the next track rather than moving within it. The progress
-bar is drawn but is deliberately not interactive for streams.
+**Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and cliamp 1.63.2
+cannot reposition one: a seek stops playback outright, measured on a 544 second track
+that answered ok and then reported itself stopped. The progress bar is drawn but is
+deliberately not interactive for streams. Local files scrub normally.
 
 **The volume slider moves cliamp's PipeWire stream, not cliamp's own gain.** It is the
 same thing the stock audio panel moves for `PipeWire ALSA [cliamp]`, so it changes only
