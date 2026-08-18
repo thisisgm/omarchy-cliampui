@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -164,7 +164,19 @@ check("a history reply is neither", Model.messageKind('{"ok":true,"history":[]}'
 // Routing one of these to parseStatus blanked the track on every command.
 check("a bare acknowledgement is not a status", Model.messageKind('{"ok":true}'), "ack")
 check("an acknowledgement carrying a field is still not a status", Model.messageKind('{"ok":true,"shuffle":false}'), "ack")
-check("a command error is not a status", Model.messageKind('{"ok":false,"error":"no lyrics found"}'), "ack")
+check("the no-lyrics error is routed as the lyrics reply it answers",
+  Model.messageKind('{"ok":false,"error":"no lyrics found"}'), "lyrics")
+check("any other command error is an acknowledgement",
+  Model.messageKind('{"ok":false,"error":"playlist not found"}'), "ack")
+check("an error reply carrying a state is still a status",
+  Model.messageKind('{"ok":false,"state":"stopped","error":"x"}'), "status")
+
+check("a failed acknowledgement gives up its error",
+  Model.ackError('{"ok":false,"error":"playlist not found"}'), "playlist not found")
+check("a successful acknowledgement carries no error",
+  Model.ackError('{"ok":true}'), "")
+check("a garbage frame carries no error", Model.ackError("not json"), "")
+check("an empty frame carries no error", Model.ackError(""), "")
 check("garbage is not a status either", Model.messageKind("not json"), "ack")
 check("an empty frame is nothing at all", Model.messageKind(""), "none")
 check("a whitespace frame is nothing at all", Model.messageKind("   \n"), "none")

@@ -229,6 +229,18 @@ function parsePlaylists(raw) {
 //   lyrics  {"ok":true,"lyrics":[{"start":30.23,"text":".."}]}
 //   ack     {"ok":true}   {"ok":true,"shuffle":false}   {"ok":false,"error":".."}
 // Only a status carries state; parsing an ack as one blanks the track.
+// Sample input, a command reply that failed: {"ok":false,"error":"playlist not found"}
+function ackError(raw) {
+  var data = null
+  try {
+    data = JSON.parse(String(raw || "").trim())
+  } catch (e) {
+    return ""
+  }
+  if (!data || typeof data !== "object" || data.ok !== false) return ""
+  return String(data.error || "")
+}
+
 function messageKind(raw) {
   var text = String(raw || "").trim()
   if (text.length === 0) return "none"
@@ -240,6 +252,8 @@ function messageKind(raw) {
   }
   if (!data || typeof data !== "object") return "ack"
   if (data.lyrics !== undefined) return "lyrics"
+  // A track with no lyrics answers an error, not an empty list, and it is still that reply.
+  if (data.ok === false && String(data.error || "").indexOf("lyric") >= 0) return "lyrics"
   if (data.history !== undefined) return "history"
   if (data.state !== undefined) return "status"
   return "ack"

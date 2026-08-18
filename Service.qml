@@ -218,14 +218,29 @@ Item {
     ? String(lyrics[activeLyricIndex].text || "")
     : ""
 
+  property string lyricsPendingPath: ""
+
   function refreshLyrics() {
     var path = String(status.path || "")
     if (path.length === 0) { lyrics = []; lyricsTrackPath = ""; return }
     if (path === lyricsTrackPath) return
     lyrics = []
+    // One request outstanding at a time. The reply carries no track, so the path the
+    // single outstanding request was sent for is the only thing that can attribute it.
+    if (lyricsPendingPath.length > 0) return
     // Marked fetched only once the request is actually out, or one dropped write
     // suppresses every retry for the rest of the track.
-    if (send('{"cmd":"lyrics"}')) lyricsTrackPath = path
+    if (send('{"cmd":"lyrics"}')) { lyricsPendingPath = path; lyricsTrackPath = path }
+  }
+
+  function acceptLyrics(raw) {
+    var wanted = lyricsPendingPath
+    lyricsPendingPath = ""
+    if (wanted === String(status.path || "")) { lyrics = Model.parseLyrics(raw); return }
+    // The track changed while this was in flight, so it answers a question nobody is
+    // asking now. Re-arm and ask again for whatever is playing.
+    lyricsTrackPath = ""
+    refreshLyrics()
   }
 
   function syncPosition() {
@@ -243,7 +258,7 @@ Item {
     // session and back. Without an explicit reconnect the panel stays bound to the
     // instance that just exited and silently reports its last state forever, which
     // reads as the widget and the player disagreeing.
-    onConnectionStateChanged: if (!connected) reconnectTimer.restart()
+    onConnectionStateChanged: if (!connected) { root.lyricsPendingPath = ""; reconnectTimer.restart() }
 
     parser: SplitParser {
       splitMarker: "\n"
@@ -252,9 +267,9 @@ Item {
         var kind = Model.messageKind(raw)
         // Every command answers on this socket too, and an acknowledgement carries no
         // track, so parsing one as a status blanked the panel until the next poll.
-        // refreshLyrics already empties the list, so a failed lyrics reply needs
-        // nothing here.
-        if (kind === "lyrics") { root.lyrics = Model.parseLyrics(raw); return }
+        // An acknowledgement that failed is the only report a command ever gets.
+        if (kind === "lyrics") { root.acceptLyrics(raw); return }
+        if (kind === "ack") { root.lastError = Model.ackError(raw); return }
         if (kind !== "status") return
         var parsed = Model.parseStatus(raw)
         root.status = parsed
