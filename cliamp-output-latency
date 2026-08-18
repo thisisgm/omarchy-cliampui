@@ -14,8 +14,7 @@ import subprocess
 import sys
 
 NS_PER_MS = 1000000
-# Anything beyond this is a misread rather than a real link, and shifting lyrics by a
-# second because of a bad parse is worse than not compensating at all.
+# Beyond this the parse is wrong, and a second of lyric shift is worse than none.
 MAX_SANE_MS = 2000
 
 

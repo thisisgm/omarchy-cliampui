@@ -81,7 +81,7 @@ def playlist_stream_url():
         try:
             with open(path, encoding="utf-8") as handle:
                 body = handle.read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         # Sample line: path = "https://host/rest/stream?c=cliamp&s=..&t=..&format=raw&id=X"
         for line in body.split("\n"):
@@ -133,6 +133,7 @@ def album_row(a):
     }
 
 
+# Sample input, a search3 song: {"id":"a1","title":"T","artist":"A","duration":214}
 def song_row(s):
     return {
         "kind": "song",
@@ -273,7 +274,7 @@ def main():
     if not host:
         host, auth = server_from(playlist_stream_url())
     if not host:
-        # Nothing Subsonic is playing, so there is no token to borrow.
+        # Neither a playing track nor a playlist on disk held a token to borrow.
         if args[0] in ("albums", "search"):
             print("[]")
         return 0
