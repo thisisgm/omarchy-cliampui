@@ -10,7 +10,8 @@
 # resume.json only carries a single path, not the queue, so the loaded playlist is
 # recorded here and reloaded afterwards. Without that the restart leaves cliamp empty.
 
-set -uo pipefail
+# -C so a redirect refuses an existing path instead of following a symlink into it.
+set -Cuo pipefail
 
 unit=cliamp-daemon.service
 rate="$(printf '%s' "${1:-}" | tr -cd '0-9')"
@@ -33,7 +34,6 @@ state="$(field state)"
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cliampui"
 mkdir -p "$state_dir"
-# Drop whatever is there first, so a symlink at this name cannot redirect the write.
 rm -f "$state_dir/sample-rate"
 printf '%s\n' "$rate" > "$state_dir/sample-rate"
 
