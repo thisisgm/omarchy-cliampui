@@ -116,7 +116,8 @@ never pauses to let you pick something. Reusing one file means browsing does not
 a playlist behind every time you press something, at the cost of one reserved name: a
 saved playlist called `cliampui` would be overwritten, so that name is hidden from the
 browse list. Choosing a saved playlist row loads that playlist directly and writes
-nothing.
+nothing. Whatever is at that name is replaced rather than written through, and the
+file is created owner only, because its stream URLs carry the token.
 
 **Browsing works before anything is playing.** The token is borrowed from whatever
 cliamp is streaming, so a daemon that just started has none to lend. The playlists on

@@ -255,12 +255,15 @@ def write_playlist(name, album, songs, host, auth):
             lines.append("year = %d" % int(song["year"]))
         lines.append("")
 
+    # Unlink first, then refuse an existing path, so a symlink cannot redirect the write.
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
     # The resolved stream URLs carry the salted Subsonic token, so keep it owner only.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines))
-    # O_CREAT sets the mode only on creation, so tighten a file an older version wrote.
-    os.chmod(path, 0o600)
 
 
 def safe_name(name):

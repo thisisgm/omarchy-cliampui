@@ -33,6 +33,8 @@ state="$(field state)"
 
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cliampui"
 mkdir -p "$state_dir"
+# Drop whatever is there first, so a symlink at this name cannot redirect the write.
+rm -f "$state_dir/sample-rate"
 printf '%s\n' "$rate" > "$state_dir/sample-rate"
 
 systemctl --user restart "$unit"
