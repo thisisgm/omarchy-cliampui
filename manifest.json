@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.thisisgm.cliampui",
   "name": "Cliamp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "author": "GM",
   "license": "MIT",
   "description": "Cliamp in the Omarchy bar: now playing with album art, transport, output routing, and whether the signal reaching the DAC is bit-perfect.",

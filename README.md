@@ -222,11 +222,13 @@ play.
 systemctl --user disable --now cliamp-daemon.service
 rm -f ~/.local/share/systemd/user/cliamp-daemon.service
 cliamp playlist delete cliampui
+rm -rf ~/.local/state/omarchy/cliampui
 omarchy plugin remove io.github.thisisgm.cliampui
 ```
 
 `cliampui` is the scratch playlist the panel overwrites on every play, and its resolved
-stream URLs carry your salted Subsonic token, so it goes with the plugin.
+stream URLs carry your salted Subsonic token, so it goes with the plugin. The state
+directory holds the one shot sample rate the daemon reads at startup, and it goes too.
 
 ## Development
 
