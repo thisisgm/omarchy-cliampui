@@ -149,6 +149,8 @@ format the library already loads. Adding a path uses `url.load`, which appends r
 than replacing. The `+` on a library row appends that album, song or saved playlist
 instead of replacing what is playing.
 
+![The queue open on the radio stations, with the one playing marked NOW](docs/panel-queue.png)
+
 **One field searches songs, albums and saved playlists.** Rows are tagged with what
 they are. Artists are not a row of their own, because an artist name already brings
 up their albums and there would be nothing to play on an artist by itself. Choosing a
