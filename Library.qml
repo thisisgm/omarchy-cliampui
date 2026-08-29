@@ -218,6 +218,14 @@ Column {
             font.pixelSize: Style.font.caption
             font.letterSpacing: 1.2
           }
+
+          PanelActionButton {
+            iconText: "+"
+            tooltipText: "Add to queue"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.service.queueResult(modelData)
+          }
         }
       }
     }

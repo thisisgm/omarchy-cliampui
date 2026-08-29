@@ -21,12 +21,17 @@ Usage:
   cliamp-library search <query>        albums and songs matching a query
   cliamp-library play <albumId>        replace the queue with that album and play
   cliamp-library play-song <songId>    replace the queue with that one song and play
+  cliamp-library queue-album <albumId> append an album to the live queue
+  cliamp-library queue-song <songId>   append one song to the live queue
+  cliamp-library queue-playlist <name> append a saved playlist to the live queue
+  cliamp-library save-queue <name>     write the live queue as a local playlist
 
 Every row carries a "kind" so one list can mix albums and songs.
 """
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import urllib.parse
@@ -38,6 +43,8 @@ TIMEOUT_SEC = 8
 
 # Reused and overwritten, so a play leaves no artifact in the user's playlist list.
 SCRATCH_PLAYLIST = "cliampui"
+SOCKET_PATH = os.path.expanduser("~/.config/cliamp/cliamp.sock")
+RESERVED_PLAYLISTS = (SCRATCH_PLAYLIST, "Recently Played")
 
 
 def cliamp(*args):
@@ -197,9 +204,171 @@ def play_album(host, auth, album_id):
     return 0
 
 
+def ipc_send(obj):
+    """One request on cliamp's socket. The panel owns the long-lived connection;
+    this is only for helpers that must talk to the daemon from a subprocess."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(10)
+    try:
+        sock.connect(SOCKET_PATH)
+        sock.sendall((json.dumps(obj) + "\n").encode())
+        buf = b""
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+            if b"\n" in buf:
+                break
+    except OSError:
+        return {}
+    finally:
+        sock.close()
+    if not buf:
+        return {}
+    try:
+        return json.loads(buf.decode())
+    except json.JSONDecodeError:
+        return {}
+
+
+def is_playing():
+    try:
+        return (json.loads(cliamp("status", "--json")) or {}).get("state") == "playing"
+    except Exception:
+        return False
+
+
+def enqueue_track(track):
+    """Append without replacing the live playlist.
+
+    track.queue keeps title and artist, but jumps to the new row when nothing is
+    playing, so a stopped queue is extended with the path-only command instead.
+    """
+    path = (track or {}).get("path") or ""
+    if not path:
+        return
+    if is_playing():
+        ipc_send({"cmd": "track.queue", "track": track})
+        return
+    ipc_send({"cmd": "queue", "path": path})
+
+
+def song_to_track(host, auth, song, album=None):
+    album = album or {}
+    sid = song.get("id")
+    if not sid:
+        return None
+    stream = (
+        host + "/rest/stream?" + auth + "&format=raw&id="
+        + urllib.parse.quote(str(sid))
+    )
+    duration = song.get("duration") or 0
+    return {
+        "path": stream,
+        "title": song.get("title") or "",
+        "artist": song.get("artist") or album.get("artist") or "",
+        "album": album.get("name") or song.get("album") or "",
+        "duration_secs": int(duration) if duration else 0,
+        "stream": True,
+    }
+
+
+def queue_album(host, auth, album_id):
+    data = call(host, auth, "getAlbum", id=album_id)
+    album = data.get("album") or {}
+    songs = album.get("song") or []
+    count = 0
+    for song in songs:
+        track = song_to_track(host, auth, song, album)
+        if not track:
+            continue
+        enqueue_track(track)
+        count += 1
+    return 0 if count else 1
+
+
+def queue_song(host, auth, song_id):
+    data = call(host, auth, "getSong", id=song_id)
+    song = data.get("song") or {}
+    track = song_to_track(host, auth, song)
+    if not track:
+        return 1
+    enqueue_track(track)
+    return 0
+
+
+def queue_playlist(name):
+    try:
+        tracks = json.loads(cliamp("playlist", "show", name, "--json"))
+    except Exception:
+        return 1
+    if not isinstance(tracks, list) or not tracks:
+        return 1
+    count = 0
+    for item in tracks:
+        path = (item or {}).get("path") or ""
+        if not path:
+            continue
+        enqueue_track({
+            "path": path,
+            "title": item.get("title") or "",
+            "artist": item.get("artist") or "",
+            "album": item.get("album") or "",
+            "stream": path.startswith("http://") or path.startswith("https://"),
+        })
+        count += 1
+    return 0 if count else 1
+
+
+def save_queue(name):
+    cleaned = safe_name(name)
+    if cleaned != name.strip() or cleaned in RESERVED_PLAYLISTS or not cleaned:
+        return 1
+    data = ipc_send({"cmd": "queue.list"})
+    tracks = data.get("tracks") or []
+    if not tracks:
+        return 1
+    write_saved_playlist(cleaned, tracks)
+    return 0
+
+
+def write_saved_playlist(name, tracks):
+    path = os.path.join(
+        os.path.expanduser("~/.config/cliamp/playlists"), safe_name(name) + ".toml"
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lines = []
+    for track in tracks:
+        item = track or {}
+        url = item.get("path") or ""
+        if not url:
+            continue
+        lines.append("[[track]]")
+        lines.append('path = "%s"' % toml_escape(url))
+        if item.get("title"):
+            lines.append('title = "%s"' % toml_escape(item["title"]))
+        if item.get("artist"):
+            lines.append('artist = "%s"' % toml_escape(item["artist"]))
+        if item.get("album"):
+            lines.append('album = "%s"' % toml_escape(item["album"]))
+        duration = item.get("duration_secs") or item.get("duration")
+        if duration:
+            lines.append("duration_secs = %d" % int(duration))
+        if item.get("stream"):
+            lines.append("stream = true")
+        lines.append("")
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+
 def play_song(host, auth, song_id):
-    """One song replaces the queue, the same way an album does. cliamp has no
-    jump-to-track command, so playing its album from the right place is not possible."""
+    """One song replaces the queue, the same way an album does."""
     data = call(host, auth, "getSong", id=song_id)
     song = data.get("song") or {}
     if not song.get("id"):
@@ -277,6 +446,12 @@ def main():
     if not args:
         return 2
 
+    if args[0] == "save-queue" and len(args) > 1:
+        return save_queue(" ".join(args[1:]).strip())
+
+    if args[0] == "queue-playlist" and len(args) > 1:
+        return queue_playlist(" ".join(args[1:]).strip())
+
     host, auth = server_from(current_stream_url())
     if not host:
         host, auth = server_from(playlist_stream_url())
@@ -304,6 +479,12 @@ def main():
 
     if args[0] == "play-song" and len(args) > 1:
         return play_song(host, auth, args[1])
+
+    if args[0] == "queue-album" and len(args) > 1:
+        return queue_album(host, auth, args[1])
+
+    if args[0] == "queue-song" and len(args) > 1:
+        return queue_song(host, auth, args[1])
 
     return 2
 
