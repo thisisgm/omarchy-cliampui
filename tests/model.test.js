@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, parseQueue, radioStationTitle, queueLabel, parsePlaylistTracks, playlistNameOk, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS, SCRATCH_PLAYLIST }"
 )()
 
 let failures = 0
@@ -156,6 +156,48 @@ check("playlists filter on the query, case insensitively",
 check("searching for the scratch name still finds nothing",
   Model.matchPlaylists(saved, "cliampui"), [])
 check("no playlists is not an error", Model.matchPlaylists(null, "x"), [])
+
+// Byte for byte from {"cmd":"queue.list"} on this box, first-row index omitted.
+const queueList = '{"ok":true,"index":1,"total":2,"tracks":[' +
+  '{"title":"Lofi Stream","path":"http://radio.cliamp.stream/lofi/stream","stream":true},' +
+  '{"title":"Synthwave Stream","path":"http://radio.cliamp.stream/synthwave/stream","index":1,"stream":true}]}'
+
+check("a queue list is not a status", Model.messageKind(queueList), "queue")
+check("queue parses", Model.parseQueue(queueList).ok, true)
+check("queue keeps the current index", Model.parseQueue(queueList).index, 1)
+check("queue rows use array position, not the omitted wire index",
+  Model.parseQueue(queueList).tracks.map(function (t) { return t.index }), [0, 1])
+check("queue titles survive", Model.parseQueue(queueList).tracks[0].title, "Lofi Stream")
+
+const queueAtZero = '{"ok":true,"total":1,"tracks":[{"title":"Lofi Stream","path":"http://radio.cliamp.stream/lofi/stream","stream":true}]}'
+check("a missing index on a live queue means the first row, because omitempty dropped 0",
+  Model.parseQueue(queueAtZero).index, 0)
+
+const queueEmpty = '{"ok":true,"index":-1}'
+check("an empty queue is ok with nothing current", Model.parseQueue(queueEmpty),
+  { ok: true, index: -1, total: 0, tracks: [] })
+check("an empty queue reply is an acknowledgement, not a list", Model.messageKind(queueEmpty), "ack")
+
+check("a hostname-only radio title is replaced from the slug",
+  Model.parseQueue('{"ok":true,"tracks":[{"title":"radio.cliamp.stream","path":"http://radio.cliamp.stream/ncs-house/stream","stream":true}]}').tracks[0].title,
+  "NCS House")
+check("radio slug maps", Model.radioStationTitle("http://radio.cliamp.stream/lofi/stream"), "Lofi Stream")
+check("a non-radio path has no station title", Model.radioStationTitle("/tmp/x.flac"), "")
+
+check("queue label prefers artist · title",
+  Model.queueLabel({ artist: "Daft Punk", title: "One More Time" }), "Daft Punk · One More Time")
+check("queue label falls back to title", Model.queueLabel({ title: "Lofi Stream" }), "Lofi Stream")
+
+const shown = '[{"path":"http://radio.cliamp.stream/lofi/stream","title":"Lofi Stream"}]'
+check("playlist show json parses", Model.parsePlaylistTracks(shown),
+  [{ title: "Lofi Stream", artist: "", album: "", path: "http://radio.cliamp.stream/lofi/stream", stream: false, duration: 0, index: 0 }])
+check("playlist show skips a row with no path", Model.parsePlaylistTracks('[{"title":"x"}]'), [])
+
+check("a saved name is accepted", Model.playlistNameOk("Late night"), true)
+check("the scratch name cannot be saved over", Model.playlistNameOk("cliampui"), false)
+check("Recently Played is reserved", Model.playlistNameOk("Recently Played"), false)
+check("a path separator is refused", Model.playlistNameOk("a/b"), false)
+check("blank is refused", Model.playlistNameOk("  "), false)
 
 // Byte for byte from the socket, the undocumented lyrics reply measured on the box.
 const lyricsReply = '{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"},{"start":33.5,"text":"Celebrate"},{"start":37,"text":"and dance so free"}]}'

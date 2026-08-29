@@ -16,6 +16,8 @@ which is what PipeWire does by default to everything.
 - **A live level meter** driven by PipeWire's own peak data, not by a second process.
 - **Transport**: play, pause, next, previous, shuffle and repeat, plus a scrubber that
   hides itself for radio rather than pretending a stream can be seeked.
+- **Queue**: the live playlist, not just a count. Pick a song or station, remove a
+  row, clear it, save it under a name, load a saved playlist, or append a path.
 - **Output routing** per application. Switching here moves cliamp's own stream and
   leaves the system default alone, so your notifications keep going where they were.
 - **A signal verdict** that only says "bit-perfect" when it really is, and otherwise
@@ -62,10 +64,14 @@ back from the sink, so the panel cannot claim a route it did not get.
 | `j` / `k` / `up` / `down` | move the cursor when a list is open |
 | `h` / `l` / `left` / `right` | seek 5 seconds. Inert on a stream, where a seek would skip the track |
 | `o` | open and close the output list |
+| `q` | open and close the queue |
 | `s` | shuffle |
 | `r` | repeat |
 | `p` | toggle rate following |
 | `/` | open the library, which puts the keyboard in the search field |
+| `w` | with the queue open, jump to Save queue as |
+| `a` | with the queue open, jump to Add a path or stream URL |
+| `x` | with the queue open, remove the highlighted queue track |
 | `f` | start cliamp in a terminal, only when nothing is running |
 | `esc` | close |
 
@@ -136,11 +142,17 @@ cliamp is streaming, so a daemon that just started has none to lend. The playlis
 disk carry the same token in their stream URLs, and those are read instead, which means
 the library is browsable from a cold start without anything being stored anywhere.
 
+**The queue is the live playlist, read over the same socket.** `{"cmd":"queue.list"}`
+returns every row, `queue.play` jumps to one, `queue.remove` drops one, and
+`queue.clear` empties it. Saving writes a local TOML playlist from that list, the same
+format the library already loads. Adding a path uses `url.load`, which appends rather
+than replacing. The `+` on a library row appends that album, song or saved playlist
+instead of replacing what is playing.
+
 **One field searches songs, albums and saved playlists.** Rows are tagged with what
 they are. Artists are not a row of their own, because an artist name already brings
 up their albums and there would be nothing to play on an artist by itself. Choosing a
-song plays that one song: cliamp has no jump-to-track command, so starting its album
-from the right place is not something this can offer.
+song replaces the queue with that one song. The `+` on the row appends it instead.
 
 **cliamp is only launched when nothing is running.** It allows one instance per user,
 so starting it while the daemon holds the socket would create a second, IPC-less copy

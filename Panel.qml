@@ -23,6 +23,7 @@ Panel {
 
   property bool sheetOpen: false
   property bool libraryOpen: false
+  property bool queueOpen: false
   property int phraseIndex: 0
   // Cursor rows only exist while the output sheet is open, so the arrows never land
   // on a control that is not currently on screen.
@@ -50,17 +51,44 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
+  readonly property int queueRowCount: (cliamp.queueTracks ? cliamp.queueTracks.length : 0)
+    + (cliamp.savedPlaylists ? cliamp.savedPlaylists.length : 0)
+
   function moveCursor(delta) {
-    var count = libraryOpen ? cliamp.results.length : cliamp.sinks.length
+    var count = libraryOpen ? cliamp.results.length
+      : queueOpen ? queueRowCount
+      : cliamp.sinks.length
     if (count === 0) return
     cursorIndex = (cursorIndex + delta + count) % count
   }
 
   function activateCursor() {
-    var list = libraryOpen ? cliamp.results : cliamp.sinks
-    if (cursorIndex < 0 || cursorIndex >= list.length) return
-    if (libraryOpen) cliamp.playResult(list[cursorIndex])
-    else cliamp.setDevice(String(list[cursorIndex].name || ""))
+    if (libraryOpen) {
+      var results = cliamp.results
+      if (cursorIndex < 0 || cursorIndex >= results.length) return
+      cliamp.playResult(results[cursorIndex])
+      return
+    }
+    if (queueOpen) {
+      var tracks = cliamp.queueTracks
+      if (cursorIndex < tracks.length) {
+        cliamp.playQueueIndex(cursorIndex)
+        return
+      }
+      var lists = cliamp.savedPlaylists
+      var item = lists[cursorIndex - tracks.length]
+      if (item) cliamp.loadPlaylist(item.name)
+      return
+    }
+    var sinks = cliamp.sinks
+    if (cursorIndex < 0 || cursorIndex >= sinks.length) return
+    cliamp.setDevice(String(sinks[cursorIndex].name || ""))
+  }
+
+  function deleteCursor() {
+    if (!queueOpen) return
+    var tracks = cliamp.queueTracks
+    if (cursorIndex < tracks.length) cliamp.removeQueueIndex(cursorIndex)
   }
 
   Service {
@@ -71,6 +99,8 @@ Panel {
     // A keystroke narrows the search under the cursor, and an index past the end
     // highlights no row while enter quietly does nothing, so it goes back to the top.
     onResultsChanged: if (root.cursorIndex >= cliamp.results.length) root.cursorIndex = 0
+    onQueueTracksChanged: if (root.queueOpen && root.cursorIndex >= root.queueRowCount) root.cursorIndex = 0
+    onPlaylistsChanged: if (root.queueOpen && root.cursorIndex >= root.queueRowCount) root.cursorIndex = 0
   }
 
   Timer {
@@ -91,14 +121,24 @@ Panel {
     function output(): string {
       root.sheetOpen = !root.sheetOpen
       root.libraryOpen = false
+      root.queueOpen = false
       root.cursorIndex = 0
       return root.sheetOpen ? "open" : "closed"
     }
     function library(): string {
       root.libraryOpen = !root.libraryOpen
       root.sheetOpen = false
+      root.queueOpen = false
       root.cursorIndex = 0
       return root.libraryOpen ? "open" : "closed"
+    }
+    function queue(): string {
+      root.queueOpen = !root.queueOpen
+      root.libraryOpen = false
+      root.sheetOpen = false
+      root.cursorIndex = 0
+      if (root.queueOpen) cliamp.refreshQueue()
+      return root.queueOpen ? "open" : "closed"
     }
   }
 
@@ -136,23 +176,33 @@ Panel {
       anchors.fill: parent
       // Every letter is forwarded to a focused editor as well as to onTextKey, so a
       // search for a track name would otherwise skip tracks and launch a terminal.
-      blocked: library.searchFocused
+      blocked: library.searchFocused || queue.editorFocused
 
       onMoveRequested: function (dx, dy) {
-        if ((root.sheetOpen || root.libraryOpen) && dy !== 0) { root.moveCursor(dy); return }
+        if ((root.sheetOpen || root.libraryOpen || root.queueOpen) && dy !== 0) { root.moveCursor(dy); return }
         if (dx !== 0) cliamp.seekBy(dx > 0 ? root.seekStepSec : -root.seekStepSec)
       }
       onActivateRequested: {
-        if (root.sheetOpen || root.libraryOpen) root.activateCursor()
+        if (root.sheetOpen || root.libraryOpen || root.queueOpen) root.activateCursor()
         else cliamp.playPause()
       }
+      onDeleteRequested: root.deleteCursor()
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         // Not j, k, l, h or x: the catcher consumes those before this handler runs.
-        if (key === "o") { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
-        else if (key === "/") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
+        if (key === "o") { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.queueOpen = false; root.cursorIndex = 0 }
+        else if (key === "/") { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.queueOpen = false; root.cursorIndex = 0 }
+        else if (key === "q") {
+          root.queueOpen = !root.queueOpen
+          root.libraryOpen = false
+          root.sheetOpen = false
+          root.cursorIndex = 0
+          if (root.queueOpen) cliamp.refreshQueue()
+        }
+        else if (key === "w" && root.queueOpen) queue.focusSave()
+        else if (key === "a" && root.queueOpen) queue.focusAdd()
         else if (key === "f") cliamp.openPlayer()
         else if (!cliamp.running) return
         else if (key === "n") cliamp.next()
@@ -194,6 +244,32 @@ Panel {
             service: cliamp
             foreground: root.foreground
             fontFamily: root.fontFamily
+            onQueueRequested: {
+              root.queueOpen = !root.queueOpen
+              root.libraryOpen = false
+              root.sheetOpen = false
+              root.cursorIndex = 0
+              if (root.queueOpen) cliamp.refreshQueue()
+            }
+          }
+
+          Queue {
+            id: queue
+            width: parent.width
+            service: cliamp
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            expanded: root.queueOpen
+            cursorIndex: root.queueOpen ? root.cursorIndex : -1
+            onMoveRequested: function (delta) { root.moveCursor(delta) }
+            onActivateRequested: root.activateCursor()
+            onToggleRequested: {
+              root.queueOpen = !root.queueOpen
+              root.libraryOpen = false
+              root.sheetOpen = false
+              root.cursorIndex = 0
+              if (root.queueOpen) cliamp.refreshQueue()
+            }
           }
 
           Library {
@@ -206,7 +282,7 @@ Panel {
             cursorIndex: root.libraryOpen ? root.cursorIndex : -1
             onMoveRequested: function (delta) { root.moveCursor(delta) }
             onActivateRequested: root.activateCursor()
-            onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
+            onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.queueOpen = false; root.cursorIndex = 0 }
           }
 
           OutputSheet {
@@ -216,7 +292,7 @@ Panel {
             fontFamily: root.fontFamily
             expanded: root.sheetOpen
             cursorIndex: root.sheetOpen ? root.cursorIndex : -1
-            onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
+            onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.queueOpen = false; root.cursorIndex = 0 }
           }
         }
       }
@@ -224,7 +300,7 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { sheetOpen = false; libraryOpen = false; return }
+    if (!opened) { sheetOpen = false; libraryOpen = false; queueOpen = false; return }
     if (panelFlick) panelFlick.contentY = 0
     cursorIndex = 0
     Qt.callLater(function () { keyCatcher.forceActiveFocus() })
