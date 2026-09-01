@@ -14,6 +14,7 @@ Column {
   property int cursorIndex: -1
 
   signal toggleRequested()
+  signal hovered(int index)
 
   readonly property color dim: Qt.darker(foreground, 1.4)
   readonly property var verdict: service ? service.signalVerdict : ({ ok: false, text: "" })
@@ -98,6 +99,7 @@ Column {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
+          onContainsMouseChanged: if (containsMouse) root.hovered(index)
           onClicked: root.service.setDevice(String(modelData.name || ""))
         }
 

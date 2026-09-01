@@ -83,14 +83,20 @@ Item {
   // Measured on 1.63.2: seeking a Navidrome track advances the queue instead of moving
   // within it, because these arrive as HTTP streams and cliamp cannot reposition one. A
   // duration is still known, so the bar is drawn, but it must not be interactive.
+  // YouTube is the exception: it reports stream:true but is backed by mpv/yt-dlp and
+  // seeks normally, verified with {"cmd":"seek"} on a live video.
   readonly property bool hasProgress: running && lengthSec > 0
-  readonly property bool canSeek: hasProgress && !isStream
+  readonly property bool isStream: status.isStream === true
+  readonly property bool isYoutube: {
+    var p = String(status.path || "")
+    return p.indexOf("youtube.com") >= 0 || p.indexOf("youtu.be") >= 0
+  }
+  readonly property bool canSeek: hasProgress && (!isStream || isYoutube)
 
   readonly property bool shuffle: status.shuffle === true
   readonly property string repeat: String(status.repeat || "Off")
   readonly property int total: Number(status.total || 0)
   readonly property real volumeDb: Number(status.volumeDb || 0)
-  readonly property bool isStream: status.isStream === true
 
   // Ticked locally between MPRIS updates, because polling Position over D-Bus four
   // times a second is traffic for something the panel can count on its own.

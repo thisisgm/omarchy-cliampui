@@ -206,6 +206,7 @@ Panel {
             cursorIndex: root.libraryOpen ? root.cursorIndex : -1
             onMoveRequested: function (delta) { root.moveCursor(delta) }
             onActivateRequested: root.activateCursor()
+            onHovered: function(idx) { root.cursorIndex = idx }
             onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
             onToggleYoutubeRequested: {
               var next = !cliamp.enableYoutubeSearch
@@ -224,6 +225,7 @@ Panel {
             fontFamily: root.fontFamily
             expanded: root.sheetOpen
             cursorIndex: root.sheetOpen ? root.cursorIndex : -1
+            onHovered: function(idx) { root.cursorIndex = idx }
             onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
           }
         }

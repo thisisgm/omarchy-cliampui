@@ -19,6 +19,7 @@ Column {
   signal moveRequested(int delta)
   signal activateRequested()
   signal toggleYoutubeRequested()
+  signal hovered(int index)
 
   readonly property string searchText: search.text
 
@@ -235,6 +236,7 @@ Column {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
+          onContainsMouseChanged: if (containsMouse) root.hovered(index)
           onClicked: root.service.playResult(modelData)
         }
 
