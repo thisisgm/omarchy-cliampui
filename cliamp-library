@@ -16,13 +16,19 @@ With nothing playing there is no URL to borrow, which used to leave the library
 unbrowsable after a daemon restart. The playlists on disk hold the same token in
 their resolved stream URLs, so they are read as a fallback.
 
+Youtube: cliamp's TUI has Ctrl+F provider-search for YouTube (ytsearch) via yt-dlp.
+This helper now mirrors it for the panel: `search` merges Subsonic rows with
+yt-dlp `ytsearch` results, and `play-youtube` builds a one-track scratch playlist
+from a YouTube URL. No Subsonic host required for YouTube.
+
 Usage:
   cliamp-library albums [limit]        list albums as JSON
-  cliamp-library search <query>        albums and songs matching a query
+  cliamp-library search <query>        albums, songs and YouTube videos matching a query
   cliamp-library play <albumId>        replace the queue with that album and play
   cliamp-library play-song <songId>    replace the queue with that one song and play
+  cliamp-library play-youtube <id> [title] [artist]  play a YouTube video
 
-Every row carries a "kind" so one list can mix albums and songs.
+Every row carries a "kind" so one list can mix albums, songs, youtube and playlists.
 """
 
 import json
@@ -38,6 +44,10 @@ TIMEOUT_SEC = 8
 
 # Reused and overwritten, so a play leaves no artifact in the user's playlist list.
 SCRATCH_PLAYLIST = "cliampui"
+
+# YouTube: how many videos to return for a panel search.
+YT_SEARCH_LIMIT = 8
+YT_SEARCH_TIMEOUT = 15
 
 
 def cliamp(*args):
@@ -172,6 +182,95 @@ def search(host, auth, query, limit):
     return rows
 
 
+def yt_search(query, limit=YT_SEARCH_LIMIT):
+    """Search YouTube via yt-dlp. Mirrors cliamp's TUI Ctrl+F provider search.
+
+    Uses `ytsearchN:query` which is the same backend cliamp's youtube provider uses
+    (see strings: ytsearch1:, ytsearch10:). Returns rows with kind youtube so the
+    panel can play them via play-youtube. Never raises; empty list on failure so a
+    Subsonic outage or missing yt-dlp doesn't blank the panel.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    # Clamp limit to 3..15 to keep panel responsive and avoid huge yt-dlp call.
+    try:
+        n = int(limit)
+    except Exception:
+        n = YT_SEARCH_LIMIT
+    n = max(3, min(15, n))
+    cmd = ["yt-dlp", "--flat-playlist", "--no-warnings", "--print-json", f"ytsearch{n}:{q}"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=YT_SEARCH_TIMEOUT)
+    except Exception:
+        return []
+    # yt-dlp exits 0 even for no results; stdout is NDJSON.
+    rows = []
+    for line in (proc.stdout or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except Exception:
+            continue
+        vid = data.get("id")
+        if not vid or not isinstance(vid, str):
+            url_tmp = str(data.get("url") or "")
+            if "watch?v=" in url_tmp:
+                vid = url_tmp.split("watch?v=")[-1].split("&")[0]
+            if not vid or not isinstance(vid, str):
+                continue
+        # Only YouTube videos, not channels/playlists/tabs. Channels show as
+        # ie_key YoutubeTab with url https://www.youtube.com/channel/...
+        if data.get("ie_key") not in (None, "Youtube"):
+            # Allow None (older yt-dlp) but reject YoutubeTab and others
+            if str(data.get("ie_key") or "") != "Youtube":
+                continue
+        url_raw = str(data.get("url") or "")
+        # Require a watch?v= URL for real videos
+        if "watch?v=" not in url_raw:
+            # Fallback still requires video-like id (11 chars)
+            if not (isinstance(vid, str) and len(vid) == 11):
+                continue
+        else:
+            # Extracted vid from url must match id for sanity
+            if "watch?v=" in url_raw:
+                url_vid = url_raw.split("watch?v=")[-1].split("&")[0]
+                if url_vid != vid:
+                    # Channel id mismatch case
+                    continue
+        # YouTube video IDs are always 11 chars
+        if not (isinstance(vid, str) and len(vid) == 11):
+            continue
+        title = str(data.get("title") or "").strip()
+        if not title:
+            continue
+        # Skip "No results" placeholder titles yt-dlp sometimes emits
+        if title.lower().startswith("no results"):
+            continue
+        uploader = str(data.get("uploader") or data.get("channel") or data.get("uploader_id") or "").strip()
+        duration = data.get("duration")
+        dur = 0
+        try:
+            if duration is not None:
+                dur = int(float(duration))
+                if dur < 0:
+                    dur = 0
+        except Exception:
+            dur = 0
+        rows.append({
+            "kind": "youtube",
+            "id": vid,
+            "name": title,
+            "artist": uploader,
+            "album": "",
+            "duration": dur,
+            "url": f"https://www.youtube.com/watch?v={vid}",
+        })
+    return rows
+
+
 def play_album(host, auth, album_id):
     data = call(host, auth, "getAlbum", id=album_id)
     album = data.get("album") or {}
@@ -214,6 +313,50 @@ def play_song(host, auth, song_id):
     write_playlist(SCRATCH_PLAYLIST, album, [song], host, auth)
     cliamp("load", SCRATCH_PLAYLIST)
     print(((song.get("artist") or "") + " - " + (song.get("title") or "")).strip(" -"))
+    return 0
+
+
+def play_youtube(video_id, title="", artist=""):
+    """Play a YouTube video via a one-track scratch playlist.
+
+    Builds `~/.config/cliamp/playlists/cliampui.toml` with a single
+    `https://www.youtube.com/watch?v=ID` URL which cliamp's youtube provider
+    (yt-dlp) resolves natively. Title/artist are for the TOML metadata so the
+    panel shows something before MPRIS updates.
+    """
+    vid = str(video_id or "").strip().split("?")[0].split("&")[0]
+    # accept full URL as well
+    if "watch?v=" in vid:
+        vid = vid.split("watch?v=")[-1].split("&")[0]
+    elif "/" in vid:
+        vid = vid.rsplit("/", 1)[-1]
+    vid = vid.strip()
+    if not vid:
+        return 1
+    # Basic sanity: youtube IDs are 11 chars alnum_- ; allow a bit wider to avoid false reject
+    if len(vid) < 6 or len(vid) > 20:
+        return 1
+    title = str(title or "").strip() or vid
+    artist = str(artist or "").strip()
+    url = f"https://www.youtube.com/watch?v={vid}"
+
+    path = os.path.join(os.path.expanduser("~/.config/cliamp/playlists"), safe_name(SCRATCH_PLAYLIST) + ".toml")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("[[track]]\n")
+        handle.write(f'path = "{toml_escape(url)}"\n')
+        handle.write(f'title = "{toml_escape(title)}"\n')
+        if artist:
+            handle.write(f'artist = "{toml_escape(artist)}"\n')
+        handle.write("\n")
+    cliamp("load", SCRATCH_PLAYLIST)
+    label = f"{artist} - {title}".strip(" -") if artist else title
+    print(label)
     return 0
 
 
@@ -277,26 +420,58 @@ def main():
     if not args:
         return 2
 
+    # Youtube play does not need a Subsonic host.
+    if args[0] in ("play-youtube", "play-yt") and len(args) > 1:
+        title = args[2] if len(args) > 2 else ""
+        artist = args[3] if len(args) > 3 else ""
+        return play_youtube(args[1], title, artist)
+
     host, auth = server_from(current_stream_url())
     if not host:
         host, auth = server_from(playlist_stream_url())
-    if not host:
-        # Neither a playing track nor a playlist on disk held a token to borrow.
-        if args[0] in ("albums", "search"):
-            print("[]")
-        return 0
 
+    # Subsonic host missing is not fatal for YouTube search or for listing empty albums.
     if args[0] == "albums":
         limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 100
-        print(json.dumps(albums(host, auth, limit)))
+        out = []
+        if host:
+            try:
+                out = albums(host, auth, limit)
+            except Exception:
+                out = []
+        print(json.dumps(out))
         return 0
 
     if args[0] == "search":
         query = " ".join(args[1:]).strip()
         if not query:
-            print(json.dumps(albums(host, auth, 200)))
+            out = []
+            if host:
+                try:
+                    out = albums(host, auth, 200)
+                except Exception:
+                    out = []
+            print(json.dumps(out))
             return 0
-        print(json.dumps(search(host, auth, query, 100)))
+        rows = []
+        if host:
+            try:
+                rows = search(host, auth, query, 100)
+            except Exception:
+                rows = []
+        # Merge YouTube results (yt-dlp ytsearch). Runs even without Subsonic.
+        try:
+            yt_rows = yt_search(query, YT_SEARCH_LIMIT)
+        except Exception:
+            yt_rows = []
+        rows.extend(yt_rows)
+        print(json.dumps(rows))
+        return 0
+
+    # Subsonic-only commands below require a host.
+    if not host:
+        if args[0] in ("albums", "search"):
+            print("[]")
         return 0
 
     if args[0] == "play" and len(args) > 1:

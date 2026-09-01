@@ -682,8 +682,12 @@ Item {
     if (!item) return
     if (item.kind === "playlist") { loadPlaylist(String(item.name)); return }
     if (albumPlayProcess.running || !item.id) return
-    albumPlayProcess.command = [libraryHelper,
-      item.kind === "song" ? "play-song" : "play", String(item.id)]
+    if (item.kind === "youtube") {
+      albumPlayProcess.command = [libraryHelper, "play-youtube", String(item.id), String(item.name || ""), String(item.artist || "")]
+    } else {
+      albumPlayProcess.command = [libraryHelper,
+        item.kind === "song" ? "play-song" : "play", String(item.id)]
+    }
     albumPlayProcess.running = true
   }
 

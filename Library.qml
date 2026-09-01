@@ -133,7 +133,7 @@ Column {
     TextField {
       id: search
       width: parent.width
-      placeholderText: "Search songs, albums and playlists"
+      placeholderText: "Search songs, albums, playlists and YouTube"
       foreground: root.foreground
       font.family: root.fontFamily
 
