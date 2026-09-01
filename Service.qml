@@ -692,6 +692,8 @@ Item {
         item.kind === "song" ? "play-song" : "play", String(item.id)]
     }
     albumPlayProcess.running = true
+  }
+
   Process {
     id: albumProcess
     command: []
