@@ -92,6 +92,7 @@ Left click opens the panel, right click plays or pauses without opening it.
 | --- | --- | --- |
 | Seconds between status refreshes | 2 | polls while the panel is open, and always while native rate following is on |
 | Match the audio graph rate to the track | on | see the warning below |
+| Search YouTube in library | on | when enabled, library search also queries YouTube via `yt-dlp` (`ytsearch`) and shows videos alongside Subsonic results; turn off to search only your library and playlists |
 | Relaunch cliamp at the track's native rate | off | see the warning below |
 | Lyric timing trim in milliseconds | 0 | added on top of the measured output latency |
 | Hide the icon when cliamp is not running | on | |
@@ -136,11 +137,11 @@ cliamp is streaming, so a daemon that just started has none to lend. The playlis
 disk carry the same token in their stream URLs, and those are read instead, which means
 the library is browsable from a cold start without anything being stored anywhere.
 
-**One field searches songs, albums and saved playlists.** Rows are tagged with what
-they are. Artists are not a row of their own, because an artist name already brings
+**One field searches songs, albums, saved playlists and YouTube.** Rows are tagged with what
+they are. When “Search YouTube in library” is on, the field also queries YouTube via `yt-dlp` (`ytsearch`) and mixes videos (`YOUTUBE`) into the same list; toggle it off in settings or via the “YouTube search ON/OFF” row in the library to search only your Navidrome library and playlists. Artists are not a row of their own, because an artist name already brings
 up their albums and there would be nothing to play on an artist by itself. Choosing a
 song plays that one song: cliamp has no jump-to-track command, so starting its album
-from the right place is not something this can offer.
+from the right place is not something this can offer. Choosing a YouTube row builds a one-track scratch playlist (`cliampui`) from `https://www.youtube.com/watch?v=ID` and loads it, just like the TUI `Ctrl+F` provider search.
 
 **cliamp is only launched when nothing is running.** It allows one instance per user,
 so starting it while the daemon holds the socket would create a second, IPC-less copy

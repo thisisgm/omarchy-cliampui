@@ -191,15 +191,25 @@ Column {
       }
     }
   }
-
   Column {
     width: parent.width
     spacing: Style.space(6)
     visible: root.showProgress
 
     Item {
+      id: progressBar
       width: parent.width
       height: Style.space(4)
+
+      // While the thumb is being dragged the fill and handle track the pointer
+      // instead of the ticking positionSec, so the bar does not fight the finger.
+      property bool scrubbing: false
+      property real scrubFraction: 0
+
+      function fractionForX(x) {
+        if (width <= 0) return 0
+        return Math.max(0, Math.min(1, x / width))
+      }
 
       Rectangle {
         anchors.fill: parent
@@ -213,6 +223,7 @@ Column {
         radius: height / 2
         color: Color.accent
         width: {
+          if (progressBar.scrubbing) return parent.width * progressBar.scrubFraction
           if (!root.service || root.service.lengthSec <= 0) return 0
           return parent.width * Math.max(0, Math.min(1, root.service.positionSec / root.service.lengthSec))
         }
@@ -225,7 +236,8 @@ Column {
         color: Color.accent
         x: Math.max(0, Math.min(parent.width - width, progress.width - width / 2))
         anchors.verticalCenter: parent.verticalCenter
-        opacity: scrubArea.containsMouse ? 1 : 0
+        // Stay visible while dragging even if the pointer has left the hit area.
+        opacity: (scrubArea.containsMouse || progressBar.scrubbing) ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 120 } }
       }
 
@@ -237,10 +249,24 @@ Column {
         hoverEnabled: true
         enabled: root.seekable
         cursorShape: Qt.PointingHandCursor
-        onClicked: function (mouse) {
-          if (!root.service || root.service.lengthSec <= 0) return
-          root.service.seekTo(root.service.lengthSec * (mouse.x / width))
+        preventStealing: true
+        onPressed: function (mouse) {
+          progressBar.scrubbing = true
+          progressBar.scrubFraction = progressBar.fractionForX(mouse.x)
         }
+        onPositionChanged: function (mouse) {
+          if (pressed && progressBar.scrubbing) {
+            progressBar.scrubFraction = progressBar.fractionForX(mouse.x)
+          }
+        }
+        onReleased: function (mouse) {
+          if (!progressBar.scrubbing) return
+          var frac = progressBar.fractionForX(mouse.x)
+          progressBar.scrubbing = false
+          if (!root.service || root.service.lengthSec <= 0) return
+          root.service.seekTo(root.service.lengthSec * frac)
+        }
+        onCanceled: progressBar.scrubbing = false
       }
     }
 
@@ -252,7 +278,13 @@ Column {
         id: elapsed
         textFormat: Text.PlainText
         anchors.left: parent.left
-        text: root.service ? Model.formatTime(root.service.positionSec) : "0:00"
+        text: {
+          if (!root.service) return "0:00"
+          if (progressBar.scrubbing) {
+            return Model.formatTime(progressBar.scrubFraction * root.service.lengthSec)
+          }
+          return Model.formatTime(root.service.positionSec)
+        }
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
