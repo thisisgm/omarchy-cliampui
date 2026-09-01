@@ -15,10 +15,12 @@ Column {
   property string fontFamily: Style.font.family
   property bool expanded: false
   property int cursorIndex: -1
-
   signal toggleRequested()
   signal moveRequested(int delta)
   signal activateRequested()
+  signal toggleYoutubeRequested()
+
+  readonly property string searchText: search.text
 
   // PanelKeyCatcher runs at Keys.BeforeItem, so the panel must stand down while this
   // field has the keyboard or every letter typed also fires a panel action.
@@ -152,6 +154,52 @@ Column {
       interval: 260
       repeat: false
       onTriggered: if (root.service) root.service.search(search.text)
+    }
+
+    CursorSurface {
+      width: parent.width
+      foreground: root.foreground
+      implicitHeight: ytToggleLabel.implicitHeight + Style.spacing.rowPaddingX
+      MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.toggleYoutubeRequested()
+      }
+      RowLayout {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.space(10)
+        anchors.rightMargin: Style.space(10)
+        spacing: Style.space(8)
+        Text {
+          id: ytToggleLabel
+          textFormat: Text.PlainText
+          Layout.fillWidth: true
+          text: "YouTube search"
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+        Text {
+          textFormat: Text.PlainText
+          text: root.service && root.service.enableYoutubeSearch ? "ON" : "OFF"
+          color: root.service && root.service.enableYoutubeSearch ? root.foreground : root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+          font.letterSpacing: 1.2
+        }
+        Text {
+          textFormat: Text.PlainText
+          text: "›"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
     }
 
     // The list scrolls inside its own bounds, so the wheel over it moves rows rather

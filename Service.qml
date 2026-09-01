@@ -21,6 +21,7 @@ Item {
 
   readonly property string cliampPath: String(setting("cliampPath", "") || "cliamp")
   readonly property int statusIntervalMs: intSetting("statusIntervalSec", 2, 1, 10) * 1000
+  readonly property bool enableYoutubeSearch: boolSetting("enableYoutubeSearch", true)
 
   // Bound by cliamp's own bus name, never to whichever player happens to be active,
   // because Chromium and others register MPRIS too and would otherwise drive this panel.
@@ -672,9 +673,11 @@ Item {
   function _dispatchLibrary() {
     if (albumProcess.running) return
     _dispatchedQuery = libraryQuery
-    albumProcess.command = libraryQuery.length > 0
+    var cmd = libraryQuery.length > 0
       ? [libraryHelper, "search", libraryQuery]
       : [libraryHelper, "albums", "200"]
+    if (!enableYoutubeSearch && libraryQuery.length > 0) cmd.push("--no-youtube")
+    albumProcess.command = cmd
     albumProcess.running = true
   }
 
@@ -689,15 +692,19 @@ Item {
         item.kind === "song" ? "play-song" : "play", String(item.id)]
     }
     albumPlayProcess.running = true
-  }
-
   Process {
     id: albumProcess
     command: []
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        root._libraryRows = Model.parseResults(text)
+        var rows = Model.parseResults(text)
+        if (!root.enableYoutubeSearch) {
+          var filtered = []
+          for (var i = 0; i < rows.length; i++) if (rows[i].kind !== "youtube") filtered.push(rows[i])
+          rows = filtered
+        }
+        root._libraryRows = rows
         root._recomputeResults()
       }
     }

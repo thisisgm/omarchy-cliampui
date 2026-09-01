@@ -24,7 +24,8 @@
       "hideWhenStopped": true,
       "cliampPath": "",
       "lyricTrimMs": 0,
-      "followNativeRate": false
+      "followNativeRate": false,
+      "enableYoutubeSearch": true
     },
     "schema": [
       {
@@ -40,6 +41,13 @@
         "type": "boolean",
         "label": "Match the audio graph rate to the track",
         "description": "Retunes PipeWire to the track's sample rate while cliamp plays, and restores it afterwards. Affects every application on this machine while music is playing.",
+        "defaultValue": true
+      },
+      {
+        "key": "enableYoutubeSearch",
+        "type": "boolean",
+        "label": "Search YouTube in library",
+        "description": "When enabled, searching the library also queries YouTube via yt-dlp (ytsearch) and shows videos alongside Subsonic results and playlists. Disable to search only your Navidrome library and saved playlists.",
         "defaultValue": true
       },
       {

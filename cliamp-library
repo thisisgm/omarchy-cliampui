@@ -443,7 +443,10 @@ def main():
         return 0
 
     if args[0] == "search":
-        query = " ".join(args[1:]).strip()
+        # Support --no-youtube flag from Service.qml toggle (enableYoutubeSearch)
+        raw_query_parts = [a for a in args[1:] if a != "--no-youtube"]
+        no_youtube = len(raw_query_parts) != len(args[1:])
+        query = " ".join(raw_query_parts).strip()
         if not query:
             out = []
             if host:
@@ -460,11 +463,13 @@ def main():
             except Exception:
                 rows = []
         # Merge YouTube results (yt-dlp ytsearch). Runs even without Subsonic.
-        try:
-            yt_rows = yt_search(query, YT_SEARCH_LIMIT)
-        except Exception:
-            yt_rows = []
-        rows.extend(yt_rows)
+        # Skipped when panel sets enableYoutubeSearch=false → --no-youtube
+        if not no_youtube:
+            try:
+                yt_rows = yt_search(query, YT_SEARCH_LIMIT)
+            except Exception:
+                yt_rows = []
+            rows.extend(yt_rows)
         print(json.dumps(rows))
         return 0
 
