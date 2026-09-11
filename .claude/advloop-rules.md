@@ -6,7 +6,13 @@ general-purpose library conventions.
 
 ## Platform facts a finding must not contradict
 
-- cliamp 1.63.2, Quickshell 0.3.0, Navidrome 0.63.2, PipeWire, Arch, single user.
+- cliamp 2.0.1, Quickshell 0.3.0, Navidrome 0.63.2, PipeWire, Arch, single user.
+- **The socket speaks the version 2 IPC protocol.** Every request is one JSON object
+  carrying `version: 2` and an `id`; a version 1 request is refused with
+  `invalid_version`. Reads are methods (`state.get`, `job.get`) answered in place with a
+  `snapshot` or `job`; anything that changes the player is an operation (`toggle`,
+  `next`, `prev`, `seek`, `load`, `lyrics`) answered with a `job`, whose terminal state
+  the caller polls for. Nothing is read off the top level of the envelope.
 - **One cliamp instance per user.** The daemon and the TUI share one socket.
 - **cliamp's output rate is fixed at launch** (`sample_rate`, default 44100) and it
   resamples everything else internally. Only 22050, 44100, 48000, 96000 and 192000 are
@@ -19,8 +25,8 @@ general-purpose library conventions.
 - **cliamp has no jump-to-track command**, only next and prev.
 - **`cliamp load` starts playback by itself.** Measured. Sending a play after it is
   redundant.
-- **`{"cmd":"lyrics"}` and `{"cmd":"history"}` exist on the socket but are undocumented.**
-  Measured on the box.
+- **The lyrics operation** answers with a job; a track with no lyrics fails that job with
+  the detail "no lyrics found" rather than answering an empty list.
 - The panel never handles a password. Every Subsonic request reuses the salted token
   already present in a stream URL cliamp published.
 
@@ -68,13 +74,15 @@ general-purpose library conventions.
 
 ## Measured facts added after the first review rounds
 
-- **Every command answers on the same socket as the status feed.** An acknowledgement is
-  `{"ok":true}`, sometimes with one field (`{"ok":true,"shuffle":false}`), and an error
-  is `{"ok":false,"error":".."}`. Only a status carries `state`. Routing an
-  acknowledgement to parseStatus blanked the track and flickered the whole panel on
-  every command.
-- **A track with no lyrics answers `{"ok":false,"error":"no lyrics found"}`.**
-  `refreshLyrics()` empties the list before it sends, so that reply needs no handling.
+- **Every request answers on the same socket as the status feed, as a job.** A v2
+  operation is accepted with `{"ok":true,"job":{...}}` whose state runs queued, running
+  and then succeeded, failed or canceled, and a refusal is
+  `{"ok":false,"error":{"code":..,"message":..}}`. Only a status reply carries `snapshot`.
+  Routing a job or a refusal to parseStatus blanked the track and flickered the whole
+  panel on every command.
+- **A track with no lyrics fails its job** with the detail "no lyrics found" rather than
+  answering an empty list. `refreshLyrics()` empties the list before it sends, so a
+  terminal job with no result needs no handling beyond freeing the slot.
 - **`cliamp load` starts playback itself.** A play sent after it is redundant.
 - **PipeWire reports the output latency** on cliamp's own node: 167 ms to the AirPods,
   0 ms to the analog output. `pactl` reports 0 usec for every sink and cannot be used.
@@ -82,7 +90,7 @@ general-purpose library conventions.
   QML binding to it for good. The library cursor is therefore driven from the panel's
   own `cursorIndex`, never from `ListView.currentIndex` or `ListView.isCurrentItem`.
 - **The socket seek takes a delta, not a position**, whatever `cliamp seek --help` says.
-  Paused at 4.9 s, `{"cmd":"seek","value":60}` landed at 64.9 s.
+  Paused at 4.2 s on 2.0.1, `{"operation":"seek","params":{"value":60}}` landed at 66.4 s.
 - **Negative deltas work and clamp at zero.** Playing at 94.9 s, value -60 landed at
   35.9 s still playing; value -30 while paused landed exactly; value -999 landed at 0.0
   with no error and no track change.

@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, jobInfo, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -16,8 +16,9 @@ function check(name, actual, expected) {
   }
 }
 
-// Byte for byte what a running TUI printed on the box, radio queue included.
-const radio = '{"ok":true,"state":"stopped","track":{"title":"Lofi Stream","path":"http://radio.cliamp.stream/lofi/stream","stream":true},"volume":-30,"total":11,"visualizer":"Bars","shuffle":false,"repeat":"Off","mono":false,"speed":1,"eq_preset":"Custom","eq_bands":[0,0,0,0,0,0,0,0,0,0]}'
+// Byte for byte what a running 2.0.1 answers `state.get`, radio queue included: the
+// runtime state sits under "snapshot" in the v2 envelope, never at the top level.
+const radio = '{"version":2,"id":"1","ok":true,"snapshot":{"state":"stopped","track":{"title":"Lofi Stream","path":"http://radio.cliamp.stream/lofi/stream","stream":true},"volume":-30,"total":11,"visualizer":"Bars","shuffle":false,"repeat":"Off","mono":false,"speed":1,"eq_preset":"Custom","eq_bands":[0,0,0,0,0,0,0,0,0,0]}}'
 
 const r = Model.parseStatus(radio)
 check("radio parses", r.ok, true)
@@ -28,7 +29,7 @@ check("radio queue depth", r.total, 11)
 check("radio repeat", r.repeat, "Off")
 
 // Byte for byte from a daemon playing a local file, which carries position and duration.
-const local = '{"ok":true,"state":"playing","track":{"title":"probe441","path":"/tmp/probe441.flac"},"position":16.873469387,"duration":600,"volume":-6.041199826559248,"total":1,"shuffle":false,"repeat":"Off","mono":false,"speed":1,"eq_preset":"Custom","eq_bands":[0,0,0,0,0,0,0,0,0,0]}'
+const local = '{"version":2,"id":"2","ok":true,"snapshot":{"state":"playing","track":{"title":"probe441","path":"/tmp/probe441.flac"},"position":16.873469387,"duration":600,"volume":-6.041199826559248,"total":1,"shuffle":false,"repeat":"Off","mono":false,"speed":1,"eq_preset":"Custom","eq_bands":[0,0,0,0,0,0,0,0,0,0]}}'
 
 const l = Model.parseStatus(local)
 check("local parses", l.ok, true)
@@ -39,7 +40,7 @@ check("local state", l.state, "playing")
 
 // Byte for byte from a real Navidrome track, tokens replaced. Note stream:true is set
 // for library tracks as well as radio, so it cannot be the seekability test.
-const nav = '{"ok":true,"state":"playing","track":{"title":"Billie (Loving Arms)","artist":"Fred again..","album":"Actual Life 2","genre":"Electronic","path":"https://music.example.com/rest/stream?c=cliamp&f=json&format=raw&id=rrH30XR3&s=SALT&t=TOKEN&u=USER&v=1.0.0","year":2021,"track_number":13,"duration_secs":217,"index":40,"stream":true},"position":37.49,"duration":217,"index":40,"total":44,"shuffle":false,"repeat":"Off"}'
+const nav = '{"version":2,"id":"3","ok":true,"snapshot":{"state":"playing","track":{"title":"Billie (Loving Arms)","artist":"Fred again..","album":"Actual Life 2","genre":"Electronic","path":"https://music.example.com/rest/stream?c=cliamp&f=json&format=raw&id=rrH30XR3&s=SALT&t=TOKEN&u=USER&v=1.0.0","year":2021,"track_number":13,"duration_secs":217,"index":40,"stream":true},"position":37.49,"duration":217,"index":40,"total":44,"shuffle":false,"repeat":"Off"}}'
 
 const n = Model.parseStatus(nav)
 check("navidrome parses", n.ok, true)
@@ -68,11 +69,22 @@ check("a missing format=raw is transcoded",
 check("a local file is not transcoded", Model.transcodedFromPath("/tmp/x.flac"), false)
 
 // A daemon with nothing loaded omits track entirely and reports index -1.
-const empty = Model.parseStatus('{"ok":true,"state":"stopped","volume":-30,"index":-1,"shuffle":false,"repeat":"Off","mono":false,"speed":1}')
+const empty = Model.parseStatus('{"version":2,"id":"4","ok":true,"snapshot":{"state":"stopped","volume":-30,"index":-1,"shuffle":false,"repeat":"Off","mono":false,"speed":1}}')
 check("empty parses", empty.ok, true)
 check("empty title", empty.title, "")
 check("empty is not a stream", empty.isStream, false)
 check("empty total defaults to zero", empty.total, 0)
+
+// The refusal the socket gives a version 1 request, which is exactly what the panel
+// that spoke the old protocol found itself staring at.
+const refused = Model.parseStatus('{"version":2,"ok":false,"error":{"code":"invalid_version","message":"unsupported protocol version"}}')
+check("a refusal is not ok", refused.ok, false)
+check("a refusal names the reason", refused.lastError, "unsupported protocol version")
+
+// A v1 status carried state at the top level; nothing in v2 does, so a state without
+// its snapshot is not a status and must not be read as one.
+check("runtime state outside a snapshot is not a status",
+  Model.parseStatus('{"ok":true,"state":"playing"}').ok, false)
 
 // cliamp exits 1 and prints this when no socket exists.
 const down = Model.parseStatus("cliamp is not running (no socket at /home/user/.config/cliamp/cliamp.sock)")
@@ -157,23 +169,18 @@ check("searching for the scratch name still finds nothing",
   Model.matchPlaylists(saved, "cliampui"), [])
 check("no playlists is not an error", Model.matchPlaylists(null, "x"), [])
 
-// Byte for byte from the socket, the undocumented lyrics reply measured on the box.
+// Byte for byte from 2.0.1, the "result" field inside a succeeded lyrics job. This is
+// the payload parseLyrics reads, not a frame the socket ever sends on its own.
 const lyricsReply = '{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"},{"start":33.5,"text":"Celebrate"},{"start":37,"text":"and dance so free"}]}'
 
-check("a lyrics reply is not mistaken for a status", Model.messageKind(lyricsReply), "lyrics")
 check("a status reply is a status", Model.messageKind(radio), "status")
-check("a history reply is neither", Model.messageKind('{"ok":true,"history":[]}'), "history")
-// Routing one of these to parseStatus blanked the track on every command.
-check("a bare acknowledgement is not a status", Model.messageKind('{"ok":true}'), "ack")
-check("an acknowledgement carrying a field is still not a status", Model.messageKind('{"ok":true,"shuffle":false}'), "ack")
-check("the no-lyrics error is routed as the lyrics reply it answers",
-  Model.messageKind('{"ok":false,"error":"no lyrics found"}'), "lyrics")
-check("any other command error is an acknowledgement",
-  Model.messageKind('{"ok":false,"error":"playlist not found"}'), "ack")
-check("an error that merely mentions lyrics is still an acknowledgement",
-  Model.messageKind('{"ok":false,"error":"playlist lyrics-2019 not found"}'), "ack")
-check("an error reply carrying a state is still a status",
-  Model.messageKind('{"ok":false,"state":"stopped","error":"x"}'), "status")
+// An operation answers with a job, and a job is not a status: routing one to parseStatus
+// blanked the track and flickered the panel on every command.
+check("a job reply is a job",
+  Model.messageKind('{"version":2,"id":"2","ok":true,"job":{"id":"ab","operation":"toggle","state":"queued"}}'), "job")
+check("a bare acknowledgement is not a status", Model.messageKind('{"version":2,"id":"3","ok":true}'), "ack")
+check("a refusal is an error",
+  Model.messageKind('{"version":2,"id":"4","ok":false,"error":{"code":"invalid_request","message":"invalid request"}}'), "error")
 
 // `omarchy bar set <id> <key> true` stores the string, not the boolean, without --json.
 check("the string the bar CLI writes counts as true", Model.asBool("true", false), true)
@@ -183,17 +190,45 @@ check("an unset setting takes the fallback", Model.asBool(undefined, true), true
 check("anything else takes the fallback", Model.asBool("yes", false), false)
 
 check("a failed acknowledgement gives up its error",
-  Model.ackError('{"ok":false,"error":"playlist not found"}'), "playlist not found")
-check("a successful acknowledgement carries no error",
-  Model.ackError('{"ok":true}'), "")
+  Model.ackError('{"version":2,"id":"4","ok":false,"error":{"code":"invalid_params","message":"invalid operation parameters"}}'),
+  "invalid operation parameters")
+check("a successful acknowledgement carries no error", Model.ackError('{"version":2,"id":"3","ok":true}'), "")
+check("a succeeded job carries no error",
+  Model.ackError('{"version":2,"id":"5","ok":true,"job":{"id":"ab","state":"succeeded"}}'), "")
 check("a garbage frame carries no error", Model.ackError("not json"), "")
 check("an empty frame carries no error", Model.ackError(""), "")
 check("garbage is not a status either", Model.messageKind("not json"), "ack")
 check("an empty frame is nothing at all", Model.messageKind(""), "none")
 check("a whitespace frame is nothing at all", Model.messageKind("   \n"), "none")
-check("a status is the reply that carries state", Model.messageKind('{"ok":true,"state":"playing"}'), "status")
-check("a stopped status is still a status", Model.messageKind('{"ok":false,"state":"stopped"}'), "status")
-check("a command error yields no lyrics", Model.parseLyrics('{"ok":false,"error":"no lyrics found"}'), [])
+// Wrapped in anything but a snapshot, the v1 shape is no longer read as a status.
+check("runtime state outside a snapshot is not a status",
+  Model.messageKind('{"ok":true,"state":"playing"}'), "ack")
+check("an error payload yields no lyrics", Model.parseLyrics('{"ok":false,"error":"no lyrics found"}'), [])
+
+// Byte for byte from 2.0.1: the job an operation is answered with, and the terminal job
+// that job.get returns with the result inline.
+const lyricsQueued = '{"version":2,"id":"t1","ok":true,"job":{"id":"2ce9db566db3131a266feb8dc174327c","operation":"lyrics","state":"queued","created_at":"2026-09-11T15:27:13.703381999Z"}}'
+const lyricsDone = '{"version":2,"id":"t2","ok":true,"job":{"id":"2ce9db566db3131a266feb8dc174327c","operation":"lyrics","state":"succeeded","created_at":"2026-09-11T15:27:13.703381999Z","started_at":"2026-09-11T15:27:13.703462737Z","finished_at":"2026-09-11T15:27:13.703569596Z","result":{"ok":true,"lyrics":[{"start":12.26,"text":"听见冬天的离开"},{"start":17.59,"text":"我在某年某月醒过来"}]}}}'
+
+check("a queued job is recognised", Model.jobInfo(lyricsQueued).state, "queued")
+check("a job carries its operation", Model.jobInfo(lyricsQueued).operation, "lyrics")
+check("a queued job has no result yet", Model.jobInfo(lyricsQueued).result, "")
+check("the job id is kept for job.get", Model.jobInfo(lyricsQueued).id, "2ce9db566db3131a266feb8dc174327c")
+
+const done = Model.jobInfo(lyricsDone)
+check("a terminal job carries its result", done.state, "succeeded")
+check("the result is handed on as text", Model.parseLyrics(done.result).length, 2)
+check("a lyric survives the job envelope", Model.parseLyrics(done.result)[0], { start: 12.26, text: "听见冬天的离开" })
+
+// A track with no lyrics fails the job instead of answering an empty list, and the
+// failed job carries no result, so the panel must read the state rather than the payload.
+const lyricsFailed = '{"version":2,"id":"l2","ok":true,"job":{"id":"b50a38fd82432a109b203b2492c50102","operation":"lyrics","state":"failed","error":{"code":"internal_error","message":"operation failed","detail":"no lyrics found"}}}'
+check("a failed job is terminal", Model.jobInfo(lyricsFailed).state, "failed")
+check("a failed job carries no result", Model.jobInfo(lyricsFailed).result, "")
+
+check("a status frame is not a job", Model.jobInfo(radio), null)
+check("a bare acknowledgement is not a job", Model.jobInfo('{"version":2,"id":"6","ok":true}'), null)
+check("garbage is not a job", Model.jobInfo("not json"), null)
 
 check("the latency helper output parses", Model.latencyMs("167\n"), 167)
 check("an unknown latency is zero, which compensates nothing", Model.latencyMs("0"), 0)
@@ -269,9 +304,9 @@ check("an honoured force reports bit-perfect",
 // cliamp calls an untouched EQ "Custom", so only the band values can be trusted.
 check("an untouched EQ is flat", Model.parseStatus(local).eqFlat, true)
 check("a raised band is not flat",
-  Model.parseStatus('{"ok":true,"state":"playing","eq_bands":[0,0,3,0,0,0,0,0,0,0]}').eqFlat, false)
+  Model.parseStatus('{"version":2,"id":"7","ok":true,"snapshot":{"state":"playing","eq_bands":[0,0,3,0,0,0,0,0,0,0]}}').eqFlat, false)
 check("a missing eq is treated as flat",
-  Model.parseStatus('{"ok":true,"state":"playing"}').eqFlat, true)
+  Model.parseStatus('{"version":2,"id":"8","ok":true,"snapshot":{"state":"playing"}}').eqFlat, true)
 
 check("EQ breaks it even when rates and gain are right",
   Model.verdict({ streamRate: 44100, sinkRate: 44100, unityGain: true, eqFlat: false, transcoded: false, codec: "FLAC" }),

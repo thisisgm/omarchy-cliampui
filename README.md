@@ -80,7 +80,7 @@ Left click opens the panel, right click plays or pauses without opening it.
 
 ## Requirements
 
-- `cliamp` on `PATH`
+- `cliamp` 2.0 or newer on `PATH`, whose socket speaks the version 2 IPC protocol
 - PipeWire, with `pw-metadata` and `pactl` available, both of which ship with it
 - `omarchy-audio-sink-availability`, part of Omarchy, used to hide outputs with
   nothing plugged into them
@@ -147,9 +147,11 @@ so starting it while the daemon holds the socket would create a second, IPC-less
 this panel cannot see. The Start row therefore appears only when the socket is free.
 
 **Lyrics are cliamp's, not this plugin's.** cliamp resolves them from embedded tags,
-then LRCLIB, then NetEase, and answers `{"cmd":"lyrics"}` on its socket with a list of
-timestamped lines. The panel only draws them, so nothing here reaches the network and
-a track with no lyrics shows no line at all.
+then LRCLIB, then NetEase, and answers the `lyrics` operation with a job whose result is
+a list of timestamped lines. The panel submits the operation, then polls `job.get` until
+the job is terminal, because on the version 2 socket an operation answers with a job
+rather than the payload. The panel only draws the lines, so nothing here reaches the
+network and a track with no lyrics shows no line at all.
 
 **Lyrics are shifted to match the sound, not the decoder.** cliamp reports the position
 it has decoded to, and PipeWire reports how far behind that the sink is: about 167 ms
@@ -158,7 +160,7 @@ subtracted automatically and re-read whenever the output changes. A headset also
 on the far side of the radio, where no host can measure it, so if the words still run
 ahead of what you hear, add the difference with the lyric timing trim in settings.
 
-**Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and cliamp 1.63.2
+**Navidrome tracks cannot be scrubbed.** They arrive as HTTP streams, and cliamp
 cannot reposition one. Asking it to seek one skips to the next track instead, and on the
 last track of a queue that presents as playback stopping. The progress bar is drawn from
 the duration the server reports, but it is deliberately not interactive for a stream, and

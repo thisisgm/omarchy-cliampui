@@ -28,50 +28,70 @@ function defaultStatus() {
   }
 }
 
-// Sample input, from a running instance:
-// {"ok":true,"state":"playing","track":{"title":"probe441","path":"/tmp/probe441.flac"},
-//  "position":16.87,"duration":600,"volume":-6.04,"total":1,"shuffle":false,"repeat":"Off",...}
-// A radio entry adds "stream":true inside track. When no socket exists cliamp exits 1
-// and prints a plain sentence instead of JSON.
-function parseStatus(raw) {
-  var out = defaultStatus()
+// Every v2 reply is one JSON object on one line: a status carries "snapshot", an
+// operation carries "job", and a refusal carries "error". Anything else, including the
+// plain sentence cliamp prints when it is not running, parses to null.
+function parseObject(raw) {
   var text = String(raw || "").trim()
-  if (text.length === 0) {
-    out.lastError = "cliamp returned nothing"
-    return out
-  }
-
+  if (text.length === 0) return null
   var data = null
   try {
     data = JSON.parse(text)
   } catch (e) {
-    out.lastError = elideError(text)
-    return out
+    return null
   }
-  if (!data || typeof data !== "object") {
-    out.lastError = elideError(text)
+  return data && typeof data === "object" ? data : null
+}
+
+// Sample input: {"code":"invalid_version","message":"unsupported protocol version"}
+// A v1 refusal carried the sentence in "error" directly, so both shapes are read.
+function errorText(data) {
+  if (!data || typeof data !== "object") return ""
+  var error = data.error
+  if (error === undefined || error === null) return ""
+  if (typeof error === "string") return error
+  if (typeof error === "object") return String(error.message || error.code || "")
+  return String(error)
+}
+
+// Sample input, the reply to method "state.get" on 2.0.1, id echoed back:
+// {"version":2,"id":"s1","ok":true,"snapshot":{"state":"playing","track":{"title":"probe441",
+//  "path":"/tmp/probe441.flac"},"position":16.87,"duration":600,"volume":-6.04,"total":1,
+//  "shuffle":false,"repeat":"Off","eq_bands":[...],"visualizer":"Bars"}}
+// The runtime state is the snapshot, never the envelope. A radio entry adds
+// "stream":true inside track. A refusal carries {"ok":false,"error":{...}} instead, and a
+// daemon that is down answers nothing at all.
+function parseStatus(raw) {
+  var out = defaultStatus()
+  var text = String(raw || "").trim()
+  var data = parseObject(raw)
+  if (data === null || typeof data.snapshot !== "object" || data.snapshot === null) {
+    out.lastError = text.length === 0 ? "cliamp returned nothing" : elideError(errorText(data) || text)
     return out
   }
 
   out.ok = data.ok === true
   if (!out.ok) {
-    out.lastError = elideError(String(data.error || text))
+    out.lastError = elideError(errorText(data) || text)
     return out
   }
 
-  out.state = String(data.state || "stopped")
-  out.volumeDb = numberOr(data.volume, 0)
-  out.total = numberOr(data.total, 0)
-  out.index = numberOr(data.index, -1)
-  out.shuffle = data.shuffle === true
-  out.repeat = String(data.repeat || "Off")
-  out.visualizer = String(data.visualizer || "")
-  out.eqFlat = bandsAreFlat(data.eq_bands)
+  var snapshot = data.snapshot
+  out.state = String(snapshot.state || "stopped")
+  out.volumeDb = numberOr(snapshot.volume, 0)
+  out.total = numberOr(snapshot.total, 0)
+  out.index = numberOr(snapshot.index, -1)
+  out.shuffle = snapshot.shuffle === true
+  out.repeat = String(snapshot.repeat || "Off")
+  out.visualizer = String(snapshot.visualizer || "")
+  out.eqFlat = bandsAreFlat(snapshot.eq_bands)
 
-  out.durationSec = numberOr(data.duration, 0)
-  out.positionSec = numberOr(data.position, 0)
+  out.durationSec = numberOr(snapshot.duration, 0)
+  out.positionSec = numberOr(snapshot.position, 0)
 
-  var track = data.track
+  // The logical track is what the queue points at, which survives a stop; the panel
+  // shows the track cliamp is actually on, so a stopped player says nothing.
+  var track = snapshot.track
   if (track && typeof track === "object") {
     out.title = String(track.title || "")
     out.path = String(track.path || "")
@@ -232,44 +252,52 @@ function asBool(value, fallback) {
   return fallback
 }
 
-// The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
-var NO_LYRICS_ERROR = "no lyrics found"
-
-// Sample input: {"ok":true,"state":"playing",..} {"ok":true,"lyrics":[..]} {"ok":true,"history":[..]} {"ok":true}
-// Only a status carries state; parsing an ack as one blanks the track.
+// Sample input: {"version":2,"id":"1","ok":true,"snapshot":{..}}           a status
+//              {"version":2,"id":"2","ok":true,"job":{"id":"ab",..}}       an operation's job
+//              {"version":2,"id":"3","ok":false,"error":{"code":..,..}}    a refusal
+//              {"version":2,"id":"4","ok":true}                           a bare acknowledgement
+// Only a snapshot carries state; parsing a job or a refusal as one blanked the track
+// and flickered the whole panel on every command.
 function messageKind(raw) {
-  var text = String(raw || "").trim()
-  if (text.length === 0) return "none"
-  var data = null
-  try {
-    data = JSON.parse(text)
-  } catch (e) {
-    return "ack"
-  }
-  if (!data || typeof data !== "object") return "ack"
-  if (data.lyrics !== undefined) return "lyrics"
-  // Matched whole: a command error that merely names a file cannot be swallowed as this.
-  if (data.ok === false && String(data.error || "") === NO_LYRICS_ERROR) return "lyrics"
-  if (data.history !== undefined) return "history"
-  if (data.state !== undefined) return "status"
+  var data = parseObject(raw)
+  if (data === null) return String(raw || "").trim().length === 0 ? "none" : "ack"
+  if (data.snapshot && typeof data.snapshot === "object") return "status"
+  if (data.job && typeof data.job === "object") return "job"
+  if (data.error !== undefined && data.error !== null) return "error"
   return "ack"
 }
 
-// Sample input, a command reply that failed: {"ok":false,"error":"playlist not found"}
+// Sample input, a command the daemon refused:
+// {"version":2,"id":"4","ok":false,"error":{"code":"invalid_params","message":"invalid operation parameters"}}
 function ackError(raw) {
-  var data = null
-  try {
-    data = JSON.parse(String(raw || "").trim())
-  } catch (e) {
-    return ""
-  }
-  if (!data || typeof data !== "object" || data.ok !== false) return ""
-  return String(data.error || "")
+  var data = parseObject(raw)
+  if (data === null || data.ok !== false) return ""
+  return errorText(data)
 }
 
-// Sample input, the reply to {"cmd":"lyrics"}, measured on the box:
+// Sample input, the reply to an operation that succeeded, then one that failed:
+// {"version":2,"id":"t2","ok":true,"job":{"id":"2ce9..","operation":"lyrics","state":"succeeded",
+//   "result":{"ok":true,"lyrics":[{"start":12.26,"text":"听见冬天的离开"}]}}}
+// {"version":2,"id":"l2","ok":true,"job":{"id":"b50a..","operation":"lyrics","state":"failed",
+//   "error":{"code":"internal_error","message":"operation failed","detail":"no lyrics found"}}}
+// A v2 operation answers with a job rather than the payload, so the panel polls job.get.
+// queued and running are not terminal; succeeded, failed and canceled are. The result is
+// serialised back to text so parseLyrics sees exactly what cliamp sent.
+function jobInfo(raw) {
+  var data = parseObject(raw)
+  if (data === null || !data.job || typeof data.job !== "object") return null
+  var job = data.job
+  return {
+    id: String(job.id || ""),
+    operation: String(job.operation || ""),
+    state: String(job.state || ""),
+    result: job.result === undefined || job.result === null ? "" : JSON.stringify(job.result)
+  }
+}
+
+// Sample input, the "result" field of a succeeded lyrics job, measured on the box:
 // {"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}]}
-// A track with no lyrics answers {"ok":false,"error":"no lyrics found"} instead.
+// A track with no lyrics fails the job instead, so there is no result to parse.
 function parseLyrics(raw) {
   var out = []
   var text = String(raw || "").trim()

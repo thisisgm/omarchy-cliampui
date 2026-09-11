@@ -140,7 +140,7 @@ Item {
   function playPause() {
     pendingPlaying = isPlaying ? 0 : 1
     playHold.restart()
-    if (send('{"cmd":"toggle"}')) { settleTimer.restart(); return }
+    if (sendOperation("toggle")) { settleTimer.restart(); return }
     if (running) player.togglePlaying()
   }
 
@@ -153,16 +153,16 @@ Item {
   }
 
   function next() {
-    if (send('{"cmd":"next"}')) { settleTimer.restart(); return }
+    if (sendOperation("next")) { settleTimer.restart(); return }
     if (running) player.next()
   }
 
   function previous() {
-    if (send('{"cmd":"prev"}')) { settleTimer.restart(); return }
+    if (sendOperation("prev")) { settleTimer.restart(); return }
     if (running) player.previous()
   }
 
-  // Measured on 1.63.2: the socket seek takes a delta, not a position, whatever
+  // Measured on 2.0.1: the socket seek takes a delta, not a position, whatever
   // `cliamp seek --help` says. The delta comes off the interpolated position rather than
   // the last polled one, which is up to a whole poll interval stale. MPRIS is the fallback.
   function seekTo(targetSec) {
@@ -170,7 +170,7 @@ Item {
     var target = Math.max(0, Math.min(lengthSec, Number(targetSec) || 0))
     var delta = Math.round(target - positionSec)
     positionSec = target
-    if (send('{"cmd":"seek","value":' + delta + '}')) { settleTimer.restart(); return }
+    if (sendOperation("seek", { value: delta })) { settleTimer.restart(); return }
     if (player) player.seek(target - Number(player.position || 0))
   }
 
@@ -180,23 +180,41 @@ Item {
   // subprocess at all. One connection replaces a spawn every couple of seconds.
   readonly property string socketPath: (Quickshell.env("HOME") || "") + "/.config/cliamp/cliamp.sock"
 
-  function refreshStatus() {
-    if (!ipcConnected) return
-    ipcLoader.item.write('{"cmd":"status"}\n')
-    ipcLoader.item.flush()
-  }
+  // cliamp 2 refuses anything but a version 2 request, and echoes the id back on every
+  // reply. Nothing routes on the id, but two requests sharing one would be
+  // indistinguishable. Measured on 2.0.1: the socket answers a version 1 request with
+  // invalid_version, which is what left this panel showing nothing at all.
+  property int requestSeq: 0
 
-  // Every verb the docs define on the socket goes the same way.
-  function send(payload) {
+  function sendRequest(request) {
     if (!ipcConnected) return false
-    ipcLoader.item.write(payload + "\n")
+    request.version = 2
+    request.id = "cliampui-" + (++requestSeq)
+    ipcLoader.item.write(JSON.stringify(request) + "\n")
     ipcLoader.item.flush()
     return true
   }
 
+  // Reads are methods answered in place. Anything that changes the player is an
+  // operation answered with a job, and being accepted is all the acknowledgement a
+  // command gets: the job's own outcome is never waited for.
+  function sendMethod(method, extra) {
+    var request = { method: method }
+    if (extra) { for (var key in extra) request[key] = extra[key] }
+    return sendRequest(request)
+  }
+
+  function sendOperation(operation, params) {
+    var request = { operation: operation }
+    if (params) request.params = params
+    return sendRequest(request)
+  }
+
+  function refreshStatus() { sendMethod("state.get") }
+
   // cliamp resolves lyrics itself, from embedded tags then LRCLIB then NetEase, and
-  // serves them on the same socket. Undocumented, measured: {"cmd":"lyrics"} answers
-  // {"ok":true,"lyrics":[{"start":30.23,"text":"..."}]}.
+  // serves them on the same socket. Measured on 2.0.1: the lyrics operation answers with
+  // a job whose result is {"ok":true,"lyrics":[{"start":30.23,"text":"..."}]}.
   property var lyrics: []
   property string lyricsTrackPath: ""
 
@@ -235,12 +253,56 @@ Item {
     if (path.length === 0) { lyrics = []; lyricsTrackPath = ""; return }
     if (path === lyricsTrackPath) return
     lyrics = []
-    // One request outstanding at a time. The reply carries no track, so the path the
+    // One request outstanding at a time. The job carries no track, so the path the
     // single outstanding request was sent for is the only thing that can attribute it.
     if (lyricsPendingPath.length > 0) return
     // Marked fetched only once the request is actually out, or one dropped write
     // suppresses every retry for the rest of the track.
-    if (send('{"cmd":"lyrics"}')) { lyricsPendingPath = path; lyricsTrackPath = path; lyricsTimeout.restart() }
+    if (sendOperation("lyrics")) {
+      lyricsPendingPath = path
+      lyricsTrackPath = path
+      lyricsPollAttempts = 0
+      lyricsTimeout.restart()
+    }
+  }
+
+  // The lyrics job is the one job the panel waits on: it polls job.get until the job is
+  // terminal, because a v2 operation answers with the job rather than the payload.
+  // Measured: succeeded carries the lyrics in result; a track with no lyrics fails the
+  // job with the detail "no lyrics found" instead, which is the same answer as an empty
+  // list and must not be retried for the rest of the track.
+  property string lyricsJobId: ""
+  property int lyricsPollAttempts: 0
+
+  function acceptJob(job) {
+    if (!job || job.operation !== "lyrics") return
+    if (job.state === "queued" || job.state === "running") {
+      if (job.id.length > 0) { lyricsJobId = job.id; lyricsPollTimer.restart() }
+      return
+    }
+    lyricsJobId = ""
+    lyricsPollTimer.stop()
+    lyricsTimeout.stop()
+    if (job.result.length > 0) { acceptLyrics(job.result); return }
+    lyricsPendingPath = ""
+    lyrics = []
+  }
+
+  // One poll per interval, and a hard stop after the same window as the timeout below,
+  // so a job that never lands cannot leave a timer running for the rest of the track.
+  Timer {
+    id: lyricsPollTimer
+    interval: 400
+    repeat: true
+    onTriggered: {
+      if (root.lyricsJobId.length === 0 || root.lyricsPollAttempts >= 12) {
+        root.lyricsJobId = ""
+        stop()
+        return
+      }
+      root.lyricsPollAttempts++
+      root.sendMethod("job.get", { job_id: root.lyricsJobId })
+    }
   }
 
   // cliamp answers every request, so this only fires when a reply arrives in a shape the
@@ -250,19 +312,27 @@ Item {
     id: lyricsTimeout
     interval: 5000
     repeat: false
-    onTriggered: root.lyricsPendingPath = ""
+    onTriggered: {
+      root.lyricsPendingPath = ""
+      root.lyricsJobId = ""
+      lyricsPollTimer.stop()
+    }
   }
 
   // A reply lost with the connection is worth asking for again, and only that case is.
   function dropLyricsRequest() {
     if (lyricsPendingPath.length === 0) return
     lyricsPendingPath = ""
+    lyricsJobId = ""
+    lyricsPollTimer.stop()
     lyricsTrackPath = ""
   }
 
   function acceptLyrics(raw) {
     var wanted = lyricsPendingPath
     lyricsPendingPath = ""
+    lyricsJobId = ""
+    lyricsPollTimer.stop()
     lyricsTimeout.stop()
     if (wanted === String(status.path || "")) { lyrics = Model.parseLyrics(raw); return }
     // The track changed while this was in flight, so it answers a question nobody is
@@ -301,11 +371,12 @@ Item {
         onRead: function (line) {
           var raw = String(line || "")
           var kind = Model.messageKind(raw)
-          // Every command answers on this socket too, and an acknowledgement carries no
-          // track, so parsing one as a status blanked the panel until the next poll.
-          // An acknowledgement that failed is the only report a command ever gets.
-          if (kind === "lyrics") { root.acceptLyrics(raw); return }
-          if (kind === "ack") { root.lastError = Model.ackError(raw); return }
+          // Every command answers on this socket too, as a job. A job carries no track,
+          // so parsing one as a status blanked the panel until the next poll; the lyrics
+          // job is the only one whose result the panel waits for. A refusal is the only
+          // report a command ever gets.
+          if (kind === "job") { root.acceptJob(Model.jobInfo(raw)); return }
+          if (kind === "error") { root.lastError = Model.ackError(raw); return }
           if (kind !== "status") return
           var parsed = Model.parseStatus(raw)
           root.status = parsed
@@ -730,7 +801,7 @@ Item {
   // used to be sent 700 ms later was the only delayed action in the plugin.
   function loadPlaylist(name) {
     if (!name) return
-    if (send('{"cmd":"load","playlist":' + JSON.stringify(String(name)) + '}')) {
+    if (sendOperation("load", { playlist: String(name) })) {
       settleTimer.restart()
       return
     }
