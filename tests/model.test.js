@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, jellyfinArtUrlFromPath, tidalTrackId, urlOrigin, v2Request, v2JobRequest, fromV2, groupResults, playableCount, toggledSource, isSourceRow, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -58,6 +58,20 @@ check("cover art is derived from the stream url",
   Model.coverArtUrlFromStreamPath(n.path, 300),
   "https://music.example.com/rest/getCoverArt?c=cliamp&id=rrH30XR3&s=SALT&t=TOKEN&u=USER&v=1.0.0&size=300")
 check("cover art needs a stream url", Model.coverArtUrlFromStreamPath("http://radio.example/stream", 300), "")
+
+// Jellyfin and Tidal paths, the shapes cliamp 2.4.1 reports in status.
+const jf = "http://jellyfin.example:8096/Items/0f1e2d3c/Download?ApiKey=K1&api_key=K1"
+check("jellyfin cover keeps only the key", Model.jellyfinArtUrlFromPath(jf, 300),
+  "http://jellyfin.example:8096/Items/0f1e2d3c/Images/Primary?maxHeight=300&api_key=K1")
+check("jellyfin under a base path", Model.jellyfinArtUrlFromPath("https://h/jf/Items/a1/Download?api_key=K", 600),
+  "https://h/jf/Items/a1/Images/Primary?maxHeight=600&api_key=K")
+check("jellyfin without a key yields nothing", Model.jellyfinArtUrlFromPath("http://h/Items/a1/Download?x=1", 300), "")
+check("a radio stream is not jellyfin", Model.jellyfinArtUrlFromPath("http://radio.example/stream", 300), "")
+check("a jellyfin cover shares the stream origin",
+  Model.urlOrigin(Model.jellyfinArtUrlFromPath(jf, 300)) === Model.urlOrigin(jf), true)
+check("a tidal track id", Model.tidalTrackId("tidal://track/1234567"), "1234567")
+check("a tidal album is not a track", Model.tidalTrackId("tidal://album/7654321"), "")
+check("no tidal id in a url", Model.tidalTrackId(jf), "")
 check("cover art refuses plaintext", Model.coverArtUrlFromStreamPath("http://music.example.com/rest/stream?id=1&u=a&t=b&s=c", 300), "")
 check("cover art of a local file", Model.coverArtUrlFromStreamPath("/tmp/x.flac", 300), "")
 check("cover art of nothing", Model.coverArtUrlFromStreamPath("", 300), "")
@@ -140,6 +154,17 @@ check("an unknown kind falls back to album",
 check("a row without an id is skipped", Model.parseResults('[{"name":"x"}]'), [])
 check("garbage results yield nothing", Model.parseResults("nope"), [])
 check("empty results", Model.parseResults("[]"), [])
+
+// Rows from the v2 provider path, as `cliamp-library` prints them on cliamp 2.x.
+const provided = '[{"kind":"playlist","provider":"tidal","providerName":"Tidal","id":"p1","name":"Late Night Jazz","songCount":42},' +
+  '{"kind":"station","provider":"radio","providerName":"Radio","id":"radio:ab12","name":"101 SMOOTH JAZZ"}]'
+check("a provider playlist keeps its kind and source", Model.parseResults(provided)[0],
+  { kind: "playlist", id: "p1", name: "Late Night Jazz", artist: "", album: "", songCount: 42, duration: 0, provider: "tidal", providerName: "Tidal" })
+check("a station keeps its kind", Model.parseResults(provided)[1].kind, "station")
+check("a provider name falls back to its key",
+  Model.parseResults('[{"kind":"album","provider":"jellyfin","id":"a1","name":"x"}]')[0].providerName, "jellyfin")
+check("a Subsonic row carries no provider",
+  Model.parseResults('[{"kind":"album","id":"a1","name":"x"}]')[0].provider, undefined)
 
 // Built by the real producer, so a field rename in parsePlaylists breaks this too.
 const saved = Model.parsePlaylists("  Recently Played  55 tracks\n  cliampui  12 tracks\n")
@@ -324,6 +349,74 @@ check("non-numeric is zero", Model.formatTime("x"), "0:00")
 check("error whitespace collapses", Model.elideError("a\n\n  b"), "a b")
 check("long error is cut", Model.elideError("x".repeat(300)).length, Model.MAX_ERROR_CHARS)
 check("empty error stays empty", Model.elideError(""), "")
+
+// cliamp 2.x socket protocol, request and reply shapes measured on 2.4.1.
+check("v1 status becomes runtime.status", JSON.parse(Model.v2Request('{"cmd":"status"}')),
+  { version: 2, method: "runtime.status" })
+check("a verb becomes an operation submit", JSON.parse(Model.v2Request('{"cmd":"seek","value":-5}')),
+  { version: 2, method: "operation.submit", operation: "seek", params: { value: -5 } })
+check("a load keeps its playlist", JSON.parse(Model.v2Request('{"cmd":"load","playlist":"A B"}')).params, { playlist: "A B" })
+check("garbage makes no request", Model.v2Request("nope"), "")
+check("a job request", JSON.parse(Model.v2JobRequest("abc")), { version: 2, method: "job.get", job_id: "abc" })
+
+check("a v1 line is not v2", Model.fromV2('{"ok":true,"state":"playing"}'), null)
+check("the version refusal asks for an upgrade",
+  Model.fromV2('{"version":2,"ok":false,"error":{"code":"invalid_version","message":"unsupported protocol version"}}').kind, "upgrade")
+const snap = Model.fromV2('{"version":2,"ok":true,"snapshot":{"state":"playing","position":3.5,"duration":300,"total":24,' +
+  '"track":{"title":"Song","artist":"Artist","path":"http://h/Items/a/Download?api_key=K","duration_secs":300,"stream":true}}}')
+check("a snapshot is a status", snap.kind, "status")
+const parsedSnap = Model.parseStatus(snap.text)
+check("a snapshot parses to the track path", parsedSnap.path, "http://h/Items/a/Download?api_key=K")
+check("a snapshot omits unity volume, read as 0 dB", parsedSnap.volumeDb, 0)
+check("a snapshot keeps its position", parsedSnap.positionSec, 3.5)
+check("a queued lyrics job is pending",
+  Model.fromV2('{"version":2,"ok":true,"job":{"id":"j1","operation":"lyrics","state":"queued"}}'),
+  { kind: "pending", text: "lyrics", jobId: "j1" })
+const noLyrics = Model.fromV2('{"version":2,"ok":true,"job":{"id":"j1","operation":"lyrics","state":"failed",' +
+  '"error":{"code":"internal_error","message":"operation failed","detail":"no lyrics found"}}}')
+check("a failed lyrics job is a lyrics reply", noLyrics.kind, "lyrics")
+check("no lyrics reads as none", Model.parseLyrics(noLyrics.text), [])
+const someLyrics = Model.fromV2('{"version":2,"ok":true,"job":{"id":"j1","operation":"lyrics","state":"succeeded",' +
+  '"result":{"ok":true,"lyrics":[{"start":30.23,"text":"One more time"}]}}}')
+check("lyrics from a finished job", Model.parseLyrics(someLyrics.text).length, 1)
+check("a finished verb is an ack",
+  Model.fromV2('{"version":2,"ok":true,"job":{"id":"j2","operation":"next","state":"succeeded","result":{"ok":true}},"snapshot":{"state":"playing"}}').kind, "ack")
+check("a failed verb carries its error",
+  Model.ackError(Model.fromV2('{"version":2,"ok":true,"job":{"id":"j3","operation":"load","state":"failed","error":{"message":"operation failed","detail":"playlist not found"}}}').text),
+  "playlist not found")
+
+// Grouping by source. Rows in list order, local first, as Service builds them.
+const localRow = { kind: "playlist", id: "Favorites", name: "Favorites" }
+const jfA = { kind: "playlist", provider: "jellyfin", providerName: "Jellyfin", id: "j1", name: "Album One" }
+const jfB = { kind: "playlist", provider: "jellyfin", providerName: "Jellyfin", id: "j2", name: "Album Two" }
+const tdA = { kind: "album", provider: "tidal", providerName: "Tidal", id: "t1", name: "Album Three" }
+const mixedSources = [localRow, jfA, jfB, tdA]
+const names = function (rows) { return rows.map(function (r) { return r.kind + ":" + r.name }) }
+
+check("a browse starts with every folder closed", names(Model.groupResults(mixedSources, {}, "")),
+  ["playlist:Favorites", "source:Jellyfin", "source:Tidal"])
+check("an open folder shows its rows beneath it", names(Model.groupResults(mixedSources, { tidal: true }, "")),
+  ["playlist:Favorites", "source:Jellyfin", "source:Tidal", "album:Album Three"])
+const folder = Model.groupResults(mixedSources, {}, "")[1]
+check("a folder carries its source and size", [folder.source, folder.songCount, folder.expanded, folder.collapsible], ["jellyfin", 2, false, true])
+check("a folder is a source row", Model.isSourceRow(folder), true)
+check("a playlist is not", Model.isSourceRow(localRow), false)
+const searched = Model.groupResults(mixedSources, {}, "album")
+check("a search shows every folder open", names(searched),
+  ["playlist:Favorites", "source:Jellyfin", "playlist:Album One", "playlist:Album Two", "source:Tidal", "album:Album Three"])
+check("a search heading does not fold", searched[1].collapsible, false)
+check("rows under a folder are marked", searched[2].inGroup, true)
+check("the marking never touches the input row", jfA.inGroup, undefined)
+check("a single source needs no folder", names(Model.groupResults([localRow, jfA, jfB], {}, "")),
+  ["playlist:Favorites", "playlist:Album One", "playlist:Album Two"])
+check("rows with no source stay flat", names(Model.groupResults([localRow], {}, "")), ["playlist:Favorites"])
+check("nothing groups to nothing", Model.groupResults(null, {}, ""), [])
+check("the count ignores folders", Model.playableCount(Model.groupResults(mixedSources, {}, "")), 1)
+check("and counts every row given it", Model.playableCount(mixedSources), 4)
+const opened = Model.toggledSource({}, "tidal")
+check("a toggle opens", opened, { tidal: true })
+check("a toggle closes", Model.toggledSource(opened, "tidal"), { tidal: false })
+check("a toggle makes a new object", Model.toggledSource(opened, "jellyfin") !== opened, true)
 
 console.log(failures === 0 ? "all model tests passed" : failures + " failing")
 if (failures > 0) Deno.exit(1)

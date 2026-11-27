@@ -141,6 +141,38 @@ function parseSinkAvailability(raw) {
   return next
 }
 
+// Sample input, the path cliamp reports for a Jellyfin track:
+// http://host:8096/Items/<itemId>/Download?ApiKey=KEY&api_key=KEY
+// The same key authorises the item's Primary image, which for a track is its album's
+// cover. Only the key is carried over, so nothing else in the path reaches the request.
+function jellyfinArtUrlFromPath(path, size) {
+  var text = String(path || "")
+  var match = /^(https?:\/\/[^\/?#]+(?:\/[^?#]*?)?)\/Items\/([0-9A-Za-z-]+)\/Download\?(.*)$/.exec(text)
+  if (!match) return ""
+  var key = ""
+  var parts = match[3].split("&")
+  for (var i = 0; i < parts.length; i++) {
+    var eq = parts[i].indexOf("=")
+    if (eq < 0) continue
+    var name = parts[i].slice(0, eq).toLowerCase()
+    if (name === "api_key" || name === "apikey") { key = parts[i].slice(eq + 1); break }
+  }
+  if (key.length === 0) return ""
+  return match[1] + "/Items/" + match[2] + "/Images/Primary?maxHeight=" + (size > 0 ? size : 300) + "&api_key=" + key
+}
+
+// Sample input: tidal://track/1234567. The cover needs a lookup, done by the helper.
+function tidalTrackId(path) {
+  var match = /^tidal:\/\/track\/([0-9]+)$/.exec(String(path || ""))
+  return match ? match[1] : ""
+}
+
+// The scheme and host of a URL, so a derived cover can be held to the stream's origin.
+function urlOrigin(url) {
+  var match = /^(https?:\/\/[^\/?#]+)/i.exec(String(url || ""))
+  return match ? match[1].toLowerCase() : ""
+}
+
 // Sample input, the path cliamp reports for a Navidrome track:
 // https://host/rest/stream?c=cliamp&f=json&format=raw&id=XXX&s=SALT&t=TOKEN&u=USER&v=1.0.0
 // The same salted token already authorises cover art, so the panel can show artwork
@@ -255,6 +287,89 @@ function messageKind(raw) {
   return "ack"
 }
 
+// ---- cliamp 2.x socket protocol ----
+//
+// cliamp 2.x rejects every v1 command with invalid_version, so status, lyrics and the
+// transport verbs all have to be re-spoken. Measured on 2.4.1, by capturing what
+// `cliamp remote` itself writes:
+//   {"version":2,"method":"runtime.status"}                       -> {"snapshot":{..}}
+//   {"version":2,"method":"operation.submit","operation":"next","params":{}}
+//                                                                 -> {"job":{"state":"queued",..}}
+//   {"version":2,"method":"job.get","job_id":"<id>"}             -> {"job":{"state":"succeeded","result":{..}}}
+
+// A v1 payload, the strings the panel already sends, as the v2 request for it.
+function v2Request(payload) {
+  var data = null
+  try {
+    data = JSON.parse(String(payload || ""))
+  } catch (e) {
+    return ""
+  }
+  if (!data || typeof data.cmd !== "string") return ""
+  if (data.cmd === "status") return JSON.stringify({ version: 2, method: "runtime.status" })
+  var params = {}
+  for (var key in data) if (key !== "cmd") params[key] = data[key]
+  return JSON.stringify({ version: 2, method: "operation.submit", operation: data.cmd, params: params })
+}
+
+function v2JobRequest(jobId) {
+  return JSON.stringify({ version: 2, method: "job.get", job_id: String(jobId || "") })
+}
+
+function v2ErrorText(error) {
+  if (!error) return ""
+  if (typeof error === "string") return error
+  return String(error.detail || error.message || error.code || "")
+}
+
+// A v2 reply as { kind, text, jobId }, where text is the v1 shaped JSON the existing
+// parsers read. kind is "upgrade" when a v1 command was refused for its version, and
+// "pending" for a job still queued or running. null means the line is not v2 at all.
+function fromV2(raw) {
+  var data = null
+  try {
+    data = JSON.parse(String(raw || "").trim())
+  } catch (e) {
+    return null
+  }
+  if (!data || typeof data !== "object" || data.version !== 2) return null
+
+  if (data.ok === false) {
+    var code = data.error && data.error.code
+    if (code === "invalid_version") return { kind: "upgrade", text: "", jobId: "" }
+    return { kind: "ack", text: JSON.stringify({ ok: false, error: v2ErrorText(data.error) }), jobId: "" }
+  }
+
+  var job = data.job
+  if (job && typeof job === "object") {
+    var state = String(job.state || "")
+    var operation = String(job.operation || "")
+    if (state === "queued" || state === "running")
+      return { kind: "pending", text: operation, jobId: String(job.id || "") }
+    var failed = state !== "succeeded"
+    if (operation === "lyrics") {
+      var result = job.result || {}
+      var lines = result.lyrics && result.lyrics.length !== undefined ? result.lyrics : []
+      return {
+        kind: "lyrics",
+        text: JSON.stringify(failed ? { ok: false, error: v2ErrorText(job.error) } : { ok: true, lyrics: lines }),
+        jobId: ""
+      }
+    }
+    return { kind: "ack", text: JSON.stringify(failed ? { ok: false, error: v2ErrorText(job.error) } : { ok: true }), jobId: "" }
+  }
+
+  // A snapshot uses the v1 status field names. Unity volume and the first index are
+  // omitted rather than sent as zero, and the v1 defaults already read them that way.
+  if (data.snapshot && typeof data.snapshot === "object") {
+    var status = {}
+    for (var k in data.snapshot) status[k] = data.snapshot[k]
+    status.ok = true
+    return { kind: "status", text: JSON.stringify(status), jobId: "" }
+  }
+  return { kind: "ack", text: JSON.stringify({ ok: true }), jobId: "" }
+}
+
 // Sample input, a command reply that failed: {"ok":false,"error":"playlist not found"}
 function ackError(raw) {
   var data = null
@@ -344,6 +459,9 @@ function parseBands(raw) {
 // Sample input, one JSON array from `cliamp-library albums` or `search`, mixing kinds:
 // [{"kind":"album","id":"7tO..","name":"Discovery","artist":"Daft Punk","songCount":14},
 //  {"kind":"song","id":"a9F..","name":"One More Time","artist":"Daft Punk","album":"Discovery","duration":320}]
+// What a row can be. Anything else, an artist say, has nothing to play and reads as an album.
+var RESULT_KINDS = ["album", "song", "playlist", "station"]
+
 function parseResults(raw) {
   var out = []
   var text = String(raw || "").trim()
@@ -358,15 +476,21 @@ function parseResults(raw) {
   for (var i = 0; i < data.length; i++) {
     var a = data[i]
     if (!a || !a.id) continue
-    out.push({
-      kind: a.kind === "song" ? "song" : "album",
+    var row = {
+      kind: RESULT_KINDS.indexOf(a.kind) >= 0 ? a.kind : "album",
       id: String(a.id),
       name: String(a.name || ""),
       artist: String(a.artist || ""),
       album: String(a.album || ""),
       songCount: numberOr(a.songCount, 0),
       duration: numberOr(a.duration, 0)
-    })
+    }
+    // Rows from cliamp's provider API name where they came from; Subsonic rows do not.
+    if (a.provider) {
+      row.provider = String(a.provider)
+      row.providerName = String(a.providerName || a.provider)
+    }
+    out.push(row)
   }
   return out
 }
@@ -395,6 +519,89 @@ function matchPlaylists(playlists, query) {
     })
   }
   return out
+}
+
+// ---- grouping the library by source ----
+
+// A folder row. It plays nothing: activating it opens or closes its source.
+var SOURCE_KIND = "source"
+
+// Sample input, rows as parseResults and matchPlaylists build them, in list order:
+//   [{kind:"playlist",name:"Favorites"}, {kind:"album",provider:"tidal",providerName:"Tidal",..}, ..]
+// Rows without a provider (local playlists, Subsonic rows) stay at the top, ungrouped.
+// The rest are gathered under one folder row per provider, in the order the providers
+// first appear. A browse shows only the folders named in `expanded`; a search shows
+// every folder open, as a heading that does not collapse, so a match is never hidden
+// behind a click. With a single provider there is nothing to tell apart, so no folder.
+function groupResults(rows, expanded, query) {
+  var list = rows && rows.length !== undefined ? rows : []
+  var open = expanded && typeof expanded === "object" ? expanded : {}
+  var searching = trim(query).length > 0
+
+  var out = []
+  var order = []
+  var groups = {}
+  for (var i = 0; i < list.length; i++) {
+    var row = list[i]
+    if (!row) continue
+    var key = String(row.provider || "")
+    if (key.length === 0) { out.push(row); continue }
+    if (!groups[key]) {
+      groups[key] = { name: String(row.providerName || key), rows: [] }
+      order.push(key)
+    }
+    groups[key].rows.push(row)
+  }
+
+  if (order.length === 1) return out.concat(groups[order[0]].rows)
+
+  for (var j = 0; j < order.length; j++) {
+    var source = order[j]
+    var group = groups[source]
+    var shown = searching || open[source] === true
+    out.push({
+      kind: SOURCE_KIND,
+      id: source,
+      source: source,
+      name: group.name,
+      artist: "",
+      album: "",
+      songCount: group.rows.length,
+      duration: 0,
+      expanded: shown,
+      collapsible: !searching
+    })
+    if (!shown) continue
+    for (var k = 0; k < group.rows.length; k++) {
+      // Copied, so the flag never leaks into the rows a later regroup starts from.
+      var child = {}
+      for (var field in group.rows[k]) child[field] = group.rows[k][field]
+      child.inGroup = true
+      out.push(child)
+    }
+  }
+  return out
+}
+
+function isSourceRow(row) {
+  return !!(row && row.kind === SOURCE_KIND)
+}
+
+// What can be played, folded folders included, so the count does not change on a click.
+function playableCount(rows) {
+  var list = rows && rows.length !== undefined ? rows : []
+  var count = 0
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].kind !== SOURCE_KIND) count++
+  return count
+}
+
+// A folder's state toggled, as a new object so a QML var property notices the change.
+function toggledSource(expanded, source) {
+  var next = {}
+  var current = expanded && typeof expanded === "object" ? expanded : {}
+  for (var key in current) next[key] = current[key]
+  next[source] = !(current[source] === true)
+  return next
 }
 
 function trim(text) {
