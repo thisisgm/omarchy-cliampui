@@ -235,8 +235,11 @@ function asBool(value, fallback) {
 // The exact answer cliamp gives for a track it found no lyrics for, measured on the box.
 var NO_LYRICS_ERROR = "no lyrics found"
 
-// Sample input: {"ok":true,"state":"playing",..} {"ok":true,"lyrics":[..]} {"ok":true,"history":[..]} {"ok":true}
-// Only a status carries state; parsing an ack as one blanks the track.
+// Sample input: {"ok":true,"state":"playing",..} {"ok":true,"lyrics":[..]} {"ok":true,"history":[..]}
+// {"ok":true,"tracks":[...],"total":11} {"ok":true}
+// Only a status carries state; parsing an ack as one blanks the track. A queue
+// list carries tracks and no state; url.load uses the same shape for the tracks
+// it just added, so the service only treats this as the live queue when it asked.
 function messageKind(raw) {
   var text = String(raw || "").trim()
   if (text.length === 0) return "none"
@@ -252,6 +255,7 @@ function messageKind(raw) {
   if (data.ok === false && String(data.error || "") === NO_LYRICS_ERROR) return "lyrics"
   if (data.history !== undefined) return "history"
   if (data.state !== undefined) return "status"
+  if (data.tracks !== undefined) return "queue"
   return "ack"
 }
 
@@ -369,6 +373,139 @@ function parseResults(raw) {
     })
   }
   return out
+}
+
+// Sample input, the live playlist from {"cmd":"queue.list"} on 1.63.2:
+// {"ok":true,"index":1,"total":11,"tracks":[{"title":"Lofi Stream","path":"http://radio.cliamp.stream/lofi/stream","stream":true},
+//  {"title":"Synthwave Stream","path":"http://radio.cliamp.stream/synthwave/stream","index":1,"stream":true}]}
+// Index 0 is omitted on the wire because the field is omitempty, so a missing index
+// on a non-empty list means the first row is current, never "nothing".
+function parseQueue(raw) {
+  var empty = { ok: false, index: -1, total: 0, tracks: [] }
+  var text = String(raw || "").trim()
+  if (text.length === 0) return empty
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return empty
+  }
+  if (!data || typeof data !== "object" || data.ok !== true) return empty
+
+  var tracks = []
+  var list = data.tracks && data.tracks.length !== undefined ? data.tracks : []
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i]
+    if (!t) continue
+    var path = String(t.path || "")
+    var title = String(t.title || "")
+    if (title.length === 0 || title === "radio.cliamp.stream") {
+      var radio = radioStationTitle(path)
+      if (radio.length > 0) title = radio
+    }
+    if (title.length === 0) title = pathBase(path)
+    tracks.push({
+      title: title,
+      artist: String(t.artist || ""),
+      album: String(t.album || ""),
+      path: path,
+      stream: t.stream === true,
+      duration: numberOr(t.duration_secs, 0),
+      index: i
+    })
+  }
+
+  var index = data.index
+  if (index === undefined || index === null) index = tracks.length > 0 ? 0 : -1
+  else index = numberOr(index, -1)
+
+  return {
+    ok: true,
+    index: index,
+    total: tracks.length,
+    tracks: tracks
+  }
+}
+
+// Built-in cliamp radio URLs publish the station slug, not a title, when queued
+// as a bare path. Map the ones this box ships so the list still has names.
+function radioStationTitle(path) {
+  var text = String(path || "")
+  var marker = "radio.cliamp.stream/"
+  var at = text.indexOf(marker)
+  if (at < 0) return ""
+  var rest = text.slice(at + marker.length)
+  var cut = rest.indexOf("/")
+  var slug = cut < 0 ? rest : rest.slice(0, cut)
+  var names = {
+    lofi: "Lofi Stream",
+    synthwave: "Synthwave Stream",
+    edm: "EDM Stream",
+    ncs: "NCS Stream",
+    "ncs-dnb": "NCS Drum & Bass",
+    "ncs-pop": "NCS Pop",
+    "ncs-trap": "NCS Trap",
+    "ncs-house": "NCS House",
+    "ncs-phonk": "NCS Phonk",
+    "ncs-chill": "NCS Chill",
+    "ncs-dubstep": "NCS Dubstep"
+  }
+  return names[slug] || ""
+}
+
+function pathBase(path) {
+  var text = String(path || "")
+  var cut = text.indexOf("?")
+  if (cut >= 0) text = text.slice(0, cut)
+  text = text.replace(/\/+$/, "")
+  var slash = text.lastIndexOf("/")
+  return slash >= 0 ? text.slice(slash + 1) : text
+}
+
+function queueLabel(track) {
+  if (!track) return ""
+  var artist = String(track.artist || "")
+  var title = String(track.title || "")
+  if (artist.length > 0 && title.length > 0) return artist + " · " + title
+  return title.length > 0 ? title : String(track.path || "")
+}
+
+// Sample input, `cliamp playlist show "Name" --json`: [{"path":"http://...","title":"Lofi Stream"}]
+function parsePlaylistTracks(raw) {
+  var out = []
+  var text = String(raw || "").trim()
+  if (text.length === 0) return out
+  var data = null
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return out
+  }
+  if (!data || data.length === undefined) return out
+  for (var i = 0; i < data.length; i++) {
+    var t = data[i]
+    if (!t || !t.path) continue
+    out.push({
+      title: String(t.title || ""),
+      artist: String(t.artist || ""),
+      album: String(t.album || ""),
+      path: String(t.path),
+      stream: t.stream === true,
+      duration: numberOr(t.duration_secs, 0),
+      index: i
+    })
+  }
+  return out
+}
+
+function playlistNameOk(name) {
+  var n = trim(name)
+  if (n.length === 0) return false
+  if (n === SCRATCH_PLAYLIST) return false
+  if (n === "Recently Played") return false
+  if (n.indexOf("/") >= 0 || n.indexOf("\\") >= 0) return false
+  if (n.indexOf("\0") >= 0) return false
+  return true
 }
 
 // Overwritten on every play, so it is plumbing rather than a playlist the user saved.

@@ -16,6 +16,8 @@ Column {
   readonly property bool shuffling: !!(service && service.shuffle)
   readonly property bool repeating: !!(service && service.repeat !== "Off")
 
+  signal queueRequested()
+
   spacing: Style.space(8)
 
   Row {
@@ -69,13 +71,18 @@ Column {
   Text {
     textFormat: Text.PlainText
     anchors.horizontalCenter: parent.horizontalCenter
-    // MPRIS reports HasTrackList false and the IPC has no queue read, so a count is
-    // the most this panel can honestly say about what is coming next.
-    text: root.service && root.service.total > 0 ? root.service.total + " in queue" : ""
+    text: root.service && root.service.total > 0 ? root.service.total + " in queue  q" : "Queue  q"
     color: root.dim
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
-    visible: text.length > 0
+    visible: true
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.queueRequested()
+    }
   }
 
   // Built as the stock audio panel builds its output volume: a section header with the

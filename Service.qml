@@ -305,7 +305,18 @@ Item {
           // track, so parsing one as a status blanked the panel until the next poll.
           // An acknowledgement that failed is the only report a command ever gets.
           if (kind === "lyrics") { root.acceptLyrics(raw); return }
-          if (kind === "ack") { root.lastError = Model.ackError(raw); return }
+          if (kind === "queue") {
+            // url.load uses the same shape for the tracks it just added, so only
+            // a reply we asked for as the live playlist is applied here.
+            if (root.pendingQueue) { root.acceptQueue(raw); return }
+            root.refreshQueue()
+            return
+          }
+          if (kind === "ack") {
+            root.lastError = Model.ackError(raw)
+            if (root.pendingQueue) { root.pendingQueue = false; root.refreshQueue() }
+            return
+          }
           if (kind !== "status") return
           var parsed = Model.parseStatus(raw)
           root.status = parsed
@@ -414,6 +425,7 @@ Item {
     readSinkAvailability()
     readPlaylists()
     readLibrary()
+    refreshQueue()
   }
 
   // ---- PipeWire routing and the signal verdict ----
@@ -643,6 +655,96 @@ Item {
   property var results: []
   property string libraryQuery: ""
 
+  // The live playlist, read with {"cmd":"queue.list"}. Status only has a count.
+  property var queueTracks: []
+  property int queueIndex: -1
+  property bool pendingQueue: false
+  readonly property var savedPlaylists: Model.matchPlaylists(playlists, "")
+
+  function refreshQueue() {
+    if (!ipcConnected) return
+    pendingQueue = true
+    send('{"cmd":"queue.list"}')
+  }
+
+  function acceptQueue(raw) {
+    pendingQueue = false
+    var parsed = Model.parseQueue(raw)
+    if (!parsed.ok) return
+    queueTracks = parsed.tracks
+    queueIndex = parsed.index
+  }
+
+  function playQueueIndex(index) {
+    var i = Number(index)
+    if (!isFinite(i) || i < 0) return
+    pendingQueue = true
+    send('{"cmd":"queue.play","index":' + i + '}')
+    settleTimer.restart()
+  }
+
+  function removeQueueIndex(index) {
+    var i = Number(index)
+    if (!isFinite(i) || i < 0) return
+    pendingQueue = true
+    send('{"cmd":"queue.remove","index":' + i + '}')
+    settleTimer.restart()
+  }
+
+  function clearQueue() {
+    pendingQueue = true
+    send('{"cmd":"queue.clear"}')
+    settleTimer.restart()
+  }
+
+  function addUrl(raw) {
+    var path = String(raw || "").replace(/^\s+|\s+$/g, "")
+    if (path.length === 0) return
+    // url.load appends. If playback is stopped it resumes the current row
+    // rather than jumping to what was just added.
+    send('{"cmd":"url.load","path":' + JSON.stringify(path) + '}')
+    settleTimer.restart()
+  }
+
+  function queueResult(item) {
+    if (!item) return
+    if (albumPlayProcess.running) return
+    if (item.kind === "playlist") {
+      albumPlayProcess.command = [libraryHelper, "queue-playlist", String(item.name)]
+      albumPlayProcess.running = true
+      return
+    }
+    if (!item.id) return
+    albumPlayProcess.command = [libraryHelper,
+      item.kind === "song" ? "queue-song" : "queue-album", String(item.id)]
+    albumPlayProcess.running = true
+  }
+
+  function saveQueue(name) {
+    var trimmed = String(name || "").replace(/^\s+|\s+$/g, "")
+    if (!Model.playlistNameOk(trimmed)) {
+      lastError = "that playlist name cannot be used"
+      return
+    }
+    if (saveProcess.running) return
+    saveProcess.command = [libraryHelper, "save-queue", trimmed]
+    saveProcess.running = true
+  }
+
+  function deletePlaylist(name) {
+    var trimmed = String(name || "").replace(/^\s+|\s+$/g, "")
+    if (!Model.playlistNameOk(trimmed)) return
+    if (actionProcess.running) return
+    actionProcess.command = [cliampPath, "playlist", "delete", trimmed]
+    actionProcess.running = true
+  }
+
+  Process {
+    id: saveProcess
+    command: []
+    onExited: { root.readPlaylists(); settleTimer.restart() }
+  }
+
   // Server rows on their own. Saved playlists are matched locally and merged in front,
   // so a playlist list arriving late does not need a second server round trip.
   property var _libraryRows: []
@@ -813,11 +915,20 @@ Item {
 
   // One handler only. A second onStatusChanged in this object is "Property value set
   // multiple times", which fails the whole Service and removes the widget from the bar.
+  property int _queueStamp: -1
+
   onStatusChanged: {
     if (!wantsStatus) return
     readSourceRate()
     // Nobody reads lyrics behind a shut panel, so that half stays panel only.
     if (panelOpen) refreshLyrics()
+    if (panelOpen) {
+      var stamp = Number(status.total || 0) * 100000 + Number(status.index || 0)
+      if (stamp !== _queueStamp) {
+        _queueStamp = stamp
+        refreshQueue()
+      }
+    }
   }
 
   // Relaunching cliamp is the only way to change its output rate, so this is gated
@@ -860,7 +971,7 @@ Item {
     id: actionProcess
     command: []
     // A cliamp verb takes a moment to land, so the panel re-reads rather than guessing.
-    onExited: settleTimer.restart()
+    onExited: { settleTimer.restart(); root.readPlaylists() }
   }
 
   Timer {
@@ -870,6 +981,7 @@ Item {
     onTriggered: {
       root.refreshStatus()
       root.readSinkRate()
+      root.refreshQueue()
     }
   }
 }
