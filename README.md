@@ -234,6 +234,15 @@ long TUI session if you want the files themselves owner-only rather than only un
 Without it the provider does not appear in cliamp at all, and the daemon has nothing to
 play.
 
+**Every configured provider is browsable on cliamp 2.x.** When the running cliamp offers
+its v2 IPC API (`cliamp remote capabilities` lists `provider.*`), the library lists the
+playlists and albums of every provider in `config.toml` (Navidrome, Jellyfin, Plex, Tidal,
+Spotify and the rest), searches each provider's own search plus those names, and plays
+through the daemon with `provider.load`, `provider.load_album` and `track.play`. Each row
+is labelled with its source. The daemon resolves every credential itself; searched tracks
+whose stream URLs carry a key are parked owner-only in `~/.local/state/omarchy/cliampui`
+rather than passed on a command line. On an older cliamp the Subsonic path below is used.
+
 ## Removal
 
 ```bash
@@ -254,6 +263,12 @@ directory holds the one shot sample rate the daemon reads at startup, and it goe
 
 ```bash
 deno run --allow-read tests/model.test.js
+```
+
+The helper's cache retention and paging are covered too, without a running cliamp:
+
+```bash
+python3 -I tests/cliamp_library_test.py
 ```
 
 The fixtures are lines a running cliamp actually printed, including the 88.2 kHz
