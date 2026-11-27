@@ -21,6 +21,7 @@ Item {
 
   readonly property string cliampPath: String(setting("cliampPath", "") || "cliamp")
   readonly property int statusIntervalMs: intSetting("statusIntervalSec", 2, 1, 10) * 1000
+  readonly property bool enableYoutubeSearch: boolSetting("enableYoutubeSearch", true)
 
   // Bound by cliamp's own bus name, never to whichever player happens to be active,
   // because Chromium and others register MPRIS too and would otherwise drive this panel.
@@ -82,14 +83,20 @@ Item {
   // Measured on 1.63.2: seeking a Navidrome track advances the queue instead of moving
   // within it, because these arrive as HTTP streams and cliamp cannot reposition one. A
   // duration is still known, so the bar is drawn, but it must not be interactive.
+  // YouTube is the exception: it reports stream:true but is backed by mpv/yt-dlp and
+  // seeks normally, verified with {"cmd":"seek"} on a live video.
   readonly property bool hasProgress: running && lengthSec > 0
-  readonly property bool canSeek: hasProgress && !isStream
+  readonly property bool isStream: status.isStream === true
+  readonly property bool isYoutube: {
+    var p = String(status.path || "")
+    return p.indexOf("youtube.com") >= 0 || p.indexOf("youtu.be") >= 0
+  }
+  readonly property bool canSeek: hasProgress && (!isStream || isYoutube)
 
   readonly property bool shuffle: status.shuffle === true
   readonly property string repeat: String(status.repeat || "Off")
   readonly property int total: Number(status.total || 0)
   readonly property real volumeDb: Number(status.volumeDb || 0)
-  readonly property bool isStream: status.isStream === true
 
   // Ticked locally between MPRIS updates, because polling Position over D-Bus four
   // times a second is traffic for something the panel can count on its own.
@@ -672,9 +679,11 @@ Item {
   function _dispatchLibrary() {
     if (albumProcess.running) return
     _dispatchedQuery = libraryQuery
-    albumProcess.command = libraryQuery.length > 0
+    var cmd = libraryQuery.length > 0
       ? [libraryHelper, "search", libraryQuery]
       : [libraryHelper, "albums", "200"]
+    if (!enableYoutubeSearch && libraryQuery.length > 0) cmd.push("--no-youtube")
+    albumProcess.command = cmd
     albumProcess.running = true
   }
 
@@ -682,8 +691,12 @@ Item {
     if (!item) return
     if (item.kind === "playlist") { loadPlaylist(String(item.name)); return }
     if (albumPlayProcess.running || !item.id) return
-    albumPlayProcess.command = [libraryHelper,
-      item.kind === "song" ? "play-song" : "play", String(item.id)]
+    if (item.kind === "youtube") {
+      albumPlayProcess.command = [libraryHelper, "play-youtube", String(item.id), String(item.name || ""), String(item.artist || "")]
+    } else {
+      albumPlayProcess.command = [libraryHelper,
+        item.kind === "song" ? "play-song" : "play", String(item.id)]
+    }
     albumPlayProcess.running = true
   }
 
@@ -693,7 +706,13 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        root._libraryRows = Model.parseResults(text)
+        var rows = Model.parseResults(text)
+        if (!root.enableYoutubeSearch) {
+          var filtered = []
+          for (var i = 0; i < rows.length; i++) if (rows[i].kind !== "youtube") filtered.push(rows[i])
+          rows = filtered
+        }
+        root._libraryRows = rows
         root._recomputeResults()
       }
     }

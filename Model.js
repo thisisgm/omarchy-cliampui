@@ -343,7 +343,8 @@ function parseBands(raw) {
 
 // Sample input, one JSON array from `cliamp-library albums` or `search`, mixing kinds:
 // [{"kind":"album","id":"7tO..","name":"Discovery","artist":"Daft Punk","songCount":14},
-//  {"kind":"song","id":"a9F..","name":"One More Time","artist":"Daft Punk","album":"Discovery","duration":320}]
+//  {"kind":"song","id":"a9F..","name":"One More Time","artist":"Daft Punk","album":"Discovery","duration":320},
+//  {"kind":"youtube","id":"dQw4w9WgXcQ","name":"Never Gonna Give You Up","artist":"Rick Astley","duration":213}]
 function parseResults(raw) {
   var out = []
   var text = String(raw || "").trim()
@@ -358,15 +359,18 @@ function parseResults(raw) {
   for (var i = 0; i < data.length; i++) {
     var a = data[i]
     if (!a || !a.id) continue
-    out.push({
-      kind: a.kind === "song" ? "song" : "album",
+    var kind = a.kind === "song" ? "song" : a.kind === "youtube" ? "youtube" : "album"
+    var row = {
+      kind: kind,
       id: String(a.id),
       name: String(a.name || ""),
       artist: String(a.artist || ""),
       album: String(a.album || ""),
       songCount: numberOr(a.songCount, 0),
       duration: numberOr(a.duration, 0)
-    })
+    }
+    if (a.url) row.url = String(a.url)
+    out.push(row)
   }
   return out
 }

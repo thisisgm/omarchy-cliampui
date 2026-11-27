@@ -206,7 +206,16 @@ Panel {
             cursorIndex: root.libraryOpen ? root.cursorIndex : -1
             onMoveRequested: function (delta) { root.moveCursor(delta) }
             onActivateRequested: root.activateCursor()
+            onHovered: function(idx) { root.cursorIndex = idx }
             onToggleRequested: { root.libraryOpen = !root.libraryOpen; root.sheetOpen = false; root.cursorIndex = 0 }
+            onToggleYoutubeRequested: {
+              var next = !cliamp.enableYoutubeSearch
+              var updated = Object.assign({}, root.settings, { enableYoutubeSearch: next })
+              root.settings = updated
+              if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, updated)
+              // Refresh current search with new toggle
+              if (root.libraryOpen) cliamp.search(library.searchText)
+            }
           }
 
           OutputSheet {
@@ -216,6 +225,7 @@ Panel {
             fontFamily: root.fontFamily
             expanded: root.sheetOpen
             cursorIndex: root.sheetOpen ? root.cursorIndex : -1
+            onHovered: function(idx) { root.cursorIndex = idx }
             onToggleRequested: { root.sheetOpen = !root.sheetOpen; root.libraryOpen = false; root.cursorIndex = 0 }
           }
         }
