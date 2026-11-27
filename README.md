@@ -265,6 +265,12 @@ directory holds the one shot sample rate the daemon reads at startup, and it goe
 deno run --allow-read tests/model.test.js
 ```
 
+The helper's cache retention and paging are covered too, without a running cliamp:
+
+```bash
+python3 -I tests/cliamp_library_test.py
+```
+
 The fixtures are lines a running cliamp actually printed, including the 88.2 kHz
 substitution this machine performs.
 

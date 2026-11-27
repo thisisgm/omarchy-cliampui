@@ -506,11 +506,15 @@ def write_private(path, value):
     os.replace(tmp, path)
 
 
-# Both caches are merged rather than replaced. A search finishing while a play-track
-# helper is still starting would otherwise drop the very track that was just picked.
-# Newest entries win, and the oldest are shed past the bound, so neither file grows
-# without limit across a long session.
-TRACK_CACHE_MAX = 1000
+# Neither cache is simply replaced. A search finishing while a play-track helper is
+# still starting would otherwise drop the very track that was just picked.
+#
+# The track cache keeps whole searches: the last TRACK_SEARCHES result sets, each intact
+# whatever its size. Retention counts searches, not entries, so a track from the results
+# on screen survives the next TRACK_SEARCHES - 1 searches however large or small they
+# are. Each set is itself bounded by SEARCH_LIMIT per provider, so the file is too.
+TRACK_SEARCHES = 3
+# The row index only maps an id to its provider and kind, so an entry-count bound is fine.
 ROW_INDEX_MAX = 5000
 
 
@@ -525,12 +529,18 @@ def merge_bounded(path, fresh, bound):
     write_private(path, merged)
 
 
+def track_searches():
+    """The cached result sets, oldest first. A flat {key: track} file, the shape an
+    earlier build wrote, reads as a single set."""
+    data = read_json(TRACK_CACHE)
+    if isinstance(data, dict) and isinstance(data.get("searches"), list):
+        return [s for s in data["searches"] if isinstance(s, dict)]
+    return [data] if isinstance(data, dict) and data else []
+
+
 def save_tracks(tracks):
-    # One search can return up to SEARCH_LIMIT tracks per provider, so a fixed bound could
-    # be outrun by a single search with many providers configured. Keeping at least three
-    # searches' worth means a track from the results on screen survives the next two
-    # searches whatever their size, and play-track reads it before anything else runs.
-    merge_bounded(TRACK_CACHE, tracks, max(TRACK_CACHE_MAX, 3 * len(tracks)))
+    searches = (track_searches() + [tracks])[-TRACK_SEARCHES:]
+    write_private(TRACK_CACHE, {"searches": searches})
 
 
 def read_json(path):
@@ -552,7 +562,11 @@ def emit(rows):
 
 
 def load_track(key):
-    return read_json(TRACK_CACHE).get(key)
+    # Newest set first, so a track seen again resolves to its latest object.
+    for found in reversed(track_searches()):
+        if key in found:
+            return found[key]
+    return None
 
 
 def play_row(provider, kind, row_id, track=None):
