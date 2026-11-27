@@ -16,11 +16,19 @@ With nothing playing there is no URL to borrow, which used to leave the library
 unbrowsable after a daemon restart. The playlists on disk hold the same token in
 their resolved stream URLs, so they are read as a fallback.
 
+On cliamp 2.x none of that is needed: its v2 IPC API browses and plays every
+configured provider (Navidrome, Jellyfin, Plex, Tidal, Spotify, radio, ...), so that path
+is taken whenever the running cliamp offers it, and the Subsonic path is the fallback.
+
 Usage:
-  cliamp-library albums [limit]        list albums as JSON
-  cliamp-library search <query>        albums and songs matching a query
-  cliamp-library play <albumId>        replace the queue with that album and play
-  cliamp-library play-song <songId>    replace the queue with that one song and play
+  cliamp-library albums [limit]                 list playlists and albums as JSON
+  cliamp-library search <query>                 albums, playlists and songs matching a query
+  cliamp-library play <albumId>                 Subsonic: replace the queue with that album
+  cliamp-library play-song <songId>             Subsonic: replace the queue with that song
+  cliamp-library play-playlist <provider> <id>  v2: load a provider playlist and play
+  cliamp-library play-album <provider> <id>     v2: load a provider album and play
+  cliamp-library play-track <rowId>             v2: replace the queue with a searched track
+  cliamp-library art tidal <trackId>            print a Tidal track's cover URL, or nothing
 
 Every row carries a "kind" so one list can mix albums and songs.
 """
@@ -272,10 +280,348 @@ def safe_name(name):
     return cleaned.strip() or "Album"
 
 
+# ---- every configured provider, through cliamp's v2 IPC API ----
+#
+# cliamp 2.x answers provider.list, provider.playlists, provider.albums, provider.search,
+# provider.load and provider.load_album over its socket, for Navidrome, Jellyfin, Plex,
+# Tidal, Spotify and the rest alike. The daemon resolves every credential itself, so this
+# path never sees a token beyond the stream URLs a search result already carries, and
+# those are kept off argv (see TRACK_CACHE).
+
+# cliamp serves at most 200 rows a page (a larger limit is clamped, oddly to 100 for
+# albums), so listings are paged up to a ceiling that keeps the panel responsive.
+PAGE_SIZE = 200
+BROWSE_LIMIT = 2000
+SEARCH_LIMIT = 50
+# A station search returns hundreds of matches for any genre word, so it is capped hard.
+RADIO_LIMIT = 10
+# local playlists already reach the panel through `cliamp playlist list`.
+BROWSE_SKIP = ("local", "radio", "podcast", "cliamp")
+
+# Search results hand back whole track objects whose paths can hold a server API key.
+# Playing one needs the object back, so it is parked here, owner only, and the panel is
+# given an opaque row id rather than the path on a command line.
+TRACK_CACHE = os.path.expanduser("~/.local/state/omarchy/cliampui/tracks.json")
+
+# Which provider and kind every listed row came from. A panel still running the
+# Subsonic-era QML sends a bare `play <id>`, and this is what lets that play anyway.
+ROW_INDEX = os.path.expanduser("~/.local/state/omarchy/cliampui/rows.json")
+
+
+def remote(operation, **params):
+    """One v2 operation, waited for. Returns the job result, or None on any failure."""
+    try:
+        out = subprocess.run(
+            ["cliamp", "remote", "call", "--wait", "--params-stdin", operation],
+            input=json.dumps(params), capture_output=True, text=True, timeout=30,
+        )
+        data = json.loads(out.stdout)
+    except Exception:
+        return None
+    job = data.get("job") or data
+    if job.get("state") not in (None, "succeeded"):
+        return None
+    result = job.get("result")
+    if not isinstance(result, dict) or result.get("ok") is False:
+        return None
+    return result
+
+
+def has_v2():
+    try:
+        out = subprocess.run(
+            ["cliamp", "remote", "capabilities"], capture_output=True, text=True, timeout=10
+        )
+        names = {op.get("name") for op in json.loads(out.stdout).get("result") or []}
+    except Exception:
+        return False
+    return {"provider.list", "provider.playlists", "provider.load"} <= names
+
+
+def providers():
+    result = remote("provider.list") or {}
+    return result.get("providers") or []
+
+
+def parallel(fn, items):
+    """Providers answer independently and Tidal is a round trip to the internet, so they
+    are asked at once rather than one after another."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not items:
+        return []
+    with ThreadPoolExecutor(max_workers=len(items)) as pool:
+        return list(pool.map(fn, items))
+
+
+def paged(operation, field, provider):
+    """Every row of a listing. total is the real count for playlists but only the page
+    length for albums, so a short page is what ends the walk."""
+    out = []
+    while len(out) < BROWSE_LIMIT:
+        result = remote(operation, provider=provider, offset=len(out), limit=PAGE_SIZE) or {}
+        page = result.get(field) or []
+        out.extend(page)
+        total = result.get("total") or 0
+        if len(page) < PAGE_SIZE or (total > len(page) and len(out) >= total):
+            break
+    return out
+
+
+def provider_playlist_rows(p):
+    rows = []
+    for pl in paged("provider.playlists", "playlists", p["key"]):
+        if not pl.get("id"):
+            continue
+        rows.append({
+            "kind": "playlist",
+            "provider": p["key"],
+            "providerName": p.get("name") or p["key"],
+            "id": str(pl["id"]),
+            "name": pl.get("name") or "",
+            "artist": "",
+            "songCount": pl.get("track_count") or 0,
+            "duration": pl.get("duration_secs") or 0,
+        })
+    return rows
+
+
+def provider_album_rows(p):
+    if not p.get("browse_albums"):
+        return []
+    return [
+        {
+            "kind": "album",
+            "provider": p["key"],
+            "providerName": p.get("name") or p["key"],
+            "id": str(a["id"]),
+            "name": a.get("name") or "",
+            "artist": a.get("artist") or "",
+            "year": a.get("year") or 0,
+            "songCount": a.get("track_count") or 0,
+        }
+        for a in paged("provider.albums", "albums", p["key"])
+        if a.get("id")
+    ]
+
+
+def browse_rows(provs):
+    """Playlists first, then albums, per provider. Some providers (Jellyfin) list each
+    album as a playlist too, so an album whose id is already a playlist is dropped."""
+    provs = [p for p in provs if p.get("key") not in BROWSE_SKIP]
+    playlists = parallel(provider_playlist_rows, provs)
+    albums = parallel(provider_album_rows, provs)
+    rows = []
+    for pls, albs in zip(playlists, albums):
+        rows.extend(pls)
+        seen = {r["id"] for r in pls}
+        rows.extend(a for a in albs if a["id"] not in seen)
+    return rows
+
+
+def track_key(provider, track):
+    import hashlib
+
+    raw = provider + "\0" + str(track.get("path") or "")
+    return provider + ":" + hashlib.sha256(raw.encode()).hexdigest()[:20]
+
+
+def search_rows_for(p, query):
+    limit = RADIO_LIMIT if p["key"] == "radio" else SEARCH_LIMIT
+    result = remote("provider.search", provider=p["key"], query=query, limit=limit) or {}
+    rows, tracks = [], {}
+    for t in (result.get("tracks") or [])[:limit]:
+        meta = t.get("provider_meta") or {}
+        base = {
+            "provider": p["key"],
+            "providerName": p.get("name") or p["key"],
+            "artist": t.get("artist") or "",
+            "album": t.get("album") or "",
+            "duration": t.get("duration_secs") or 0,
+        }
+        # Tidal answers album matches as pseudo tracks pointing at tidal://album/<id>.
+        if meta.get("kind") == "album" and meta.get("albumID"):
+            rows.append(dict(base, kind="album", id=str(meta["albumID"]), name=t.get("title") or ""))
+            continue
+        if t.get("feed") or not t.get("path"):
+            continue
+        key = track_key(p["key"], t)
+        tracks[key] = t
+        kind = "station" if p["key"] == "radio" else "song"
+        rows.append(dict(base, kind=kind, id=key, name=t.get("title") or ""))
+    return rows, tracks
+
+
+def matches(row, needle):
+    return needle in (row.get("name") or "").lower() or needle in (row.get("artist") or "").lower()
+
+
+def search_rows(provs, query):
+    """provider.search finds what each provider's own search finds; Jellyfin's matches
+    song titles only. The browse list is matched locally as well, so an album or
+    playlist is found by name or artist on every provider."""
+    needle = query.lower()
+    music = [p for p in provs if p.get("key") not in BROWSE_SKIP]
+    searchable = [p for p in provs if p.get("searchable") and p.get("key") not in ("podcast", "cliamp")]
+
+    browsed = [r for r in browse_rows(music) if matches(r, needle)]
+    found = parallel(lambda p: search_rows_for(p, query), searchable)
+
+    rows, tracks = list(browsed), {}
+    seen = {(r["provider"], r["kind"], r["id"]) for r in rows}
+    # Stations last, so a genre word does not bury the music under a wall of radio.
+    stations = []
+    for found_rows, found_tracks in found:
+        tracks.update(found_tracks)
+        for r in found_rows:
+            ident = (r["provider"], r["kind"], r["id"])
+            if ident in seen:
+                continue
+            seen.add(ident)
+            (stations if r["kind"] == "station" else rows).append(r)
+    save_tracks(tracks)
+    return rows + stations
+
+
+def write_private(path, value):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(value, handle)
+    os.replace(tmp, path)
+
+
+def save_tracks(tracks):
+    write_private(TRACK_CACHE, tracks)
+
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def remember_rows(rows):
+    """Merged into the existing index, so a search does not forget the browse list."""
+    index = read_json(ROW_INDEX)
+    for r in rows:
+        index[r["id"]] = [r["provider"], r["kind"]]
+    write_private(ROW_INDEX, index)
+
+
+def emit(rows):
+    remember_rows(rows)
+    print(json.dumps(rows))
+
+
+def load_track(key):
+    return read_json(TRACK_CACHE).get(key)
+
+
+def play_row(provider, kind, row_id):
+    if kind == "playlist":
+        return 0 if remote("provider.load", provider=provider, playlist=row_id) else 1
+    if kind == "album":
+        return 0 if remote("provider.load_album", provider=provider, album=row_id) else 1
+    track = load_track(row_id)
+    if not track:
+        return 1
+    # A song replaces the queue, as it does on the Subsonic path.
+    remote("queue.clear")
+    return 0 if remote("track.play", track=track) else 1
+
+
+def v2_main(args):
+    if args[0] == "albums":
+        emit(browse_rows(providers()))
+        return 0
+
+    if args[0] == "search":
+        query = " ".join(args[1:]).strip()
+        provs = providers()
+        emit(search_rows(provs, query) if query else browse_rows(provs))
+        return 0
+
+    if args[0] == "play-playlist" and len(args) > 2:
+        return play_row(args[1], "playlist", args[2])
+
+    if args[0] == "play-album" and len(args) > 2:
+        return play_row(args[1], "album", args[2])
+
+    if args[0] == "play-track" and len(args) > 1:
+        return play_row("", "song", args[1])
+
+    # The Subsonic-era panel sends only an id; the row index knows where it came from.
+    if args[0] in ("play", "play-song") and len(args) > 1:
+        known = read_json(ROW_INDEX).get(args[1])
+        if not known:
+            return 1
+        return play_row(known[0], known[1], args[1])
+
+    return 2
+
+
+# ---- cover art cliamp does not publish ----
+#
+# A Tidal track reaches cliamp as tidal://track/<id> with no cover. Tidal's public track
+# page names it in og:image, so it is read from there, without any credential, and only
+# a resources.tidal.com image URL is accepted back. Each id is looked up once.
+TIDAL_ART_CACHE = os.path.expanduser("~/.local/state/omarchy/cliampui/tidal-art.json")
+TIDAL_ART_PREFIX = "https://resources.tidal.com/images/"
+
+
+def tidal_art(track_id):
+    if not track_id.isdigit():
+        return ""
+    cache = read_json(TIDAL_ART_CACHE)
+    if track_id in cache:
+        return cache[track_id]
+
+    import re
+
+    request = urllib.request.Request(
+        "https://tidal.com/browse/track/" + track_id,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SEC) as response:
+            page = response.read(512 * 1024).decode("utf-8", "replace")
+    except Exception:
+        # Not cached, so a network blip is retried on the next track change.
+        return ""
+    match = re.search(r'property="og:image"\s+content="([^"]+)"', page) or re.search(
+        r'content="([^"]+)"\s+property="og:image"', page
+    )
+    url = match.group(1) if match else ""
+    if not (url.startswith(TIDAL_ART_PREFIX) and re.fullmatch(r"[0-9a-f/]+/\d+x\d+\.jpg", url[len(TIDAL_ART_PREFIX):])):
+        url = ""
+    cache[track_id] = url
+    # Bounded, so a long listening session does not grow the file forever.
+    if len(cache) > 2000:
+        cache = dict(list(cache.items())[-1000:])
+    write_private(TIDAL_ART_CACHE, cache)
+    return url
+
+
 def main():
     args = sys.argv[1:]
     if not args:
         return 2
+
+    # Needs no player and no provider API, so it is answered before either is probed.
+    if args[0] == "art" and len(args) > 2 and args[1] == "tidal":
+        print(tidal_art(args[2]))
+        return 0
+
+    if has_v2():
+        return v2_main(args)
 
     host, auth = server_from(current_stream_url())
     if not host:

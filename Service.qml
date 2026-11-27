@@ -65,7 +65,45 @@ Item {
     if (!running) return ""
     var fromMpris = player ? safeArtUrl(player.trackArtUrl) : ""
     if (fromMpris.length > 0) return fromMpris
-    return safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
+    var fromSubsonic = safeArtUrl(Model.coverArtUrlFromStreamPath(status.path, artSizePx))
+    if (fromSubsonic.length > 0) return fromSubsonic
+    // A LAN Jellyfin is often plain http. cliamp is already fetching the audio from that
+    // origin with that key, so the cover is allowed from the same origin and no other.
+    var fromJellyfin = Model.jellyfinArtUrlFromPath(status.path, artSizePx)
+    if (fromJellyfin.length > 0 && Model.urlOrigin(fromJellyfin) === Model.urlOrigin(status.path))
+      return fromJellyfin
+    var tidalId = Model.tidalTrackId(status.path)
+    if (tidalId.length > 0 && tidalId === tidalArtTrack) return safeArtUrl(tidalArt)
+    return ""
+  }
+
+  // Tidal tracks carry only an id, so the helper looks the cover up per track.
+  property string tidalArt: ""
+  property string tidalArtTrack: ""
+  property string _tidalArtWanted: ""
+
+  function readTidalArt() {
+    var id = Model.tidalTrackId(status.path)
+    if (id.length === 0 || id === _tidalArtWanted) return
+    _tidalArtWanted = id
+    if (tidalArtProcess.running) return
+    tidalArtProcess.command = [libraryHelper, "art", "tidal", id]
+    tidalArtProcess.running = true
+  }
+
+  Process {
+    id: tidalArtProcess
+    command: []
+    property string asked: command.length > 3 ? String(command[3]) : ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.tidalArt = String(text || "").trim()
+        root.tidalArtTrack = tidalArtProcess.asked
+      }
+    }
+    // A track change while a lookup ran asks again for the track now playing.
+    onExited: if (root._tidalArtWanted !== asked) { root._tidalArtWanted = ""; root.readTidalArt() }
   }
 
   // Held only across the gap where cliamp is unreachable, which is the socket dropping
@@ -180,18 +218,36 @@ Item {
   // subprocess at all. One connection replaces a spawn every couple of seconds.
   readonly property string socketPath: (Quickshell.env("HOME") || "") + "/.config/cliamp/cliamp.sock"
 
-  function refreshStatus() {
-    if (!ipcConnected) return
-    ipcLoader.item.write('{"cmd":"status"}\n')
-    ipcLoader.item.flush()
-  }
+  function refreshStatus() { send('{"cmd":"status"}') }
 
-  // Every verb the docs define on the socket goes the same way.
+  // The socket protocol in use. cliamp 1.x speaks v1; 2.x refuses v1 with
+  // invalid_version, and that refusal is what moves the panel to v2. Reset on every
+  // reconnect, since a relaunch may bring a different cliamp.
+  property int ipcVersion: 1
+
+  // Every verb the docs define on the socket goes the same way. The panel keeps writing
+  // v1 payloads; on a v2 daemon they are translated on the way out.
   function send(payload) {
     if (!ipcConnected) return false
-    ipcLoader.item.write(payload + "\n")
+    var line = ipcVersion === 2 ? Model.v2Request(payload) : String(payload)
+    if (line.length === 0) return false
+    ipcLoader.item.write(line + "\n")
     ipcLoader.item.flush()
     return true
+  }
+
+  // On v2 a lyrics request answers with a queued job, so its result is fetched.
+  property string lyricsJobId: ""
+
+  Timer {
+    id: lyricsJobPoll
+    interval: 300
+    repeat: false
+    onTriggered: {
+      if (root.lyricsJobId.length === 0 || !root.ipcConnected) return
+      ipcLoader.item.write(Model.v2JobRequest(root.lyricsJobId) + "\n")
+      ipcLoader.item.flush()
+    }
   }
 
   // cliamp resolves lyrics itself, from embedded tags then LRCLIB then NetEase, and
@@ -248,13 +304,15 @@ Item {
   // so one lost reply costs that track its lyrics rather than a request every 5 seconds.
   Timer {
     id: lyricsTimeout
-    interval: 5000
+    // A v2 lyrics job was measured at about 3 s against LRCLIB, so 10 s leaves headroom.
+    interval: 10000
     repeat: false
-    onTriggered: root.lyricsPendingPath = ""
+    onTriggered: { root.lyricsPendingPath = ""; root.lyricsJobId = "" }
   }
 
   // A reply lost with the connection is worth asking for again, and only that case is.
   function dropLyricsRequest() {
+    lyricsJobId = ""
     if (lyricsPendingPath.length === 0) return
     lyricsPendingPath = ""
     lyricsTrackPath = ""
@@ -292,7 +350,7 @@ Item {
 
       // On connect ask for status at once; on drop abandon the lyrics request in flight.
       onConnectionStateChanged: {
-        if (connected) { root.refreshStatus(); return }
+        if (connected) { root.ipcVersion = 1; root.refreshStatus(); return }
         root.dropLyricsRequest()
       }
 
@@ -300,7 +358,28 @@ Item {
         splitMarker: "\n"
         onRead: function (line) {
           var raw = String(line || "")
-          var kind = Model.messageKind(raw)
+          var kind = ""
+          var v2 = Model.fromV2(raw)
+          if (v2 !== null) {
+            if (v2.kind === "upgrade") {
+              // A v1 command refused for its version. Whatever was asked is asked again
+              // in v2 by the next poll; status is asked for now so the panel fills at once.
+              if (root.ipcVersion !== 2) { root.ipcVersion = 2; root.refreshStatus() }
+              return
+            }
+            if (v2.kind === "pending") {
+              if (v2.text === "lyrics" && root.lyricsPendingPath.length > 0) {
+                root.lyricsJobId = v2.jobId
+                lyricsJobPoll.restart()
+              }
+              return
+            }
+            if (v2.kind === "lyrics") root.lyricsJobId = ""
+            kind = v2.kind
+            raw = v2.text
+          } else {
+            kind = Model.messageKind(raw)
+          }
           // Every command answers on this socket too, and an acknowledgement carries no
           // track, so parsing one as a status blanked the panel until the next poll.
           // An acknowledgement that failed is the only report a command ever gets.
@@ -680,10 +759,20 @@ Item {
 
   function playResult(item) {
     if (!item) return
-    if (item.kind === "playlist") { loadPlaylist(String(item.name)); return }
+    // A playlist with no provider is a local one from `cliamp playlist list`.
+    if (item.kind === "playlist" && !item.provider) { loadPlaylist(String(item.name)); return }
     if (albumPlayProcess.running || !item.id) return
-    albumPlayProcess.command = [libraryHelper,
-      item.kind === "song" ? "play-song" : "play", String(item.id)]
+    if (item.provider) {
+      // Played by the daemon through its provider API, so any configured source works.
+      albumPlayProcess.command = item.kind === "playlist"
+        ? [libraryHelper, "play-playlist", String(item.provider), String(item.id)]
+        : item.kind === "album"
+          ? [libraryHelper, "play-album", String(item.provider), String(item.id)]
+          : [libraryHelper, "play-track", String(item.id)]
+    } else {
+      albumPlayProcess.command = [libraryHelper,
+        item.kind === "song" ? "play-song" : "play", String(item.id)]
+    }
     albumPlayProcess.running = true
   }
 
@@ -816,6 +905,7 @@ Item {
   onStatusChanged: {
     if (!wantsStatus) return
     readSourceRate()
+    readTidalArt()
     // Nobody reads lyrics behind a shut panel, so that half stays panel only.
     if (panelOpen) refreshLyrics()
   }

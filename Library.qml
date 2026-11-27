@@ -4,8 +4,8 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
-// The library, browsed straight off the Subsonic server with the token cliamp already
-// published. Choosing an album replaces the queue in place, so the daemon never stops
+// The library: every provider cliamp has configured, browsed through its v2 API, or on
+// an older cliamp the Subsonic server reached with the token cliamp already published. Choosing an album replaces the queue in place, so the daemon never stops
 // and the terminal player is never needed to change what is playing.
 Column {
   id: root
@@ -128,8 +128,8 @@ Column {
     spacing: Style.space(8)
     visible: root.expanded
 
-    // search3 matches album, artist and song names, and saved playlists are matched
-    // locally, so one field reaches everything that can be played.
+    // Each provider's own search, plus playlists and albums matched locally by name and
+    // artist, so one field reaches everything that can be played.
     TextField {
       id: search
       width: parent.width
@@ -212,7 +212,8 @@ Column {
           // The kind is the load-bearing detail once one list mixes three of them.
           Text {
             textFormat: Text.PlainText
-            text: String(modelData.kind || "").toUpperCase()
+            text: ((modelData.providerName ? modelData.providerName + " · " : "")
+              + String(modelData.kind || "")).toUpperCase()
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
