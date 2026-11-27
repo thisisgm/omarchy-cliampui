@@ -526,7 +526,11 @@ def merge_bounded(path, fresh, bound):
 
 
 def save_tracks(tracks):
-    merge_bounded(TRACK_CACHE, tracks, TRACK_CACHE_MAX)
+    # One search can return up to SEARCH_LIMIT tracks per provider, so a fixed bound could
+    # be outrun by a single search with many providers configured. Keeping at least three
+    # searches' worth means a track from the results on screen survives the next two
+    # searches whatever their size, and play-track reads it before anything else runs.
+    merge_bounded(TRACK_CACHE, tracks, max(TRACK_CACHE_MAX, 3 * len(tracks)))
 
 
 def read_json(path):
@@ -551,12 +555,12 @@ def load_track(key):
     return read_json(TRACK_CACHE).get(key)
 
 
-def play_row(provider, kind, row_id):
+def play_row(provider, kind, row_id, track=None):
     if kind == "playlist":
         return 0 if remote("provider.load", provider=provider, playlist=row_id) else 1
     if kind == "album":
         return 0 if remote("provider.load_album", provider=provider, album=row_id) else 1
-    track = load_track(row_id)
+    track = track or load_track(row_id)
     if not track:
         return 1
     # A song replaces the queue, as it does on the Subsonic path.
@@ -564,7 +568,7 @@ def play_row(provider, kind, row_id):
     return 0 if remote("track.play", track=track) else 1
 
 
-def v2_main(args):
+def v2_main(args, pending_track=None):
     if args[0] == "albums":
         emit(browse_rows(providers()))
         return 0
@@ -582,7 +586,7 @@ def v2_main(args):
         return play_row(args[1], "album", args[2])
 
     if args[0] == "play-track" and len(args) > 1:
-        return play_row("", "song", args[1])
+        return play_row("", "song", args[1], track=pending_track)
 
     # The Subsonic-era panel sends only an id; the row index knows where it came from.
     if args[0] in ("play", "play-song") and len(args) > 1:
@@ -646,8 +650,12 @@ def main():
         print(tidal_art(args[2]))
         return 0
 
+    # Read before the has_v2() probe, which is a subprocess round trip a concurrent search
+    # could otherwise finish inside and overwrite the cache entry this play depends on.
+    pending_track = load_track(args[1]) if args[0] == "play-track" and len(args) > 1 else None
+
     if has_v2():
-        return v2_main(args)
+        return v2_main(args, pending_track)
 
     host, auth = server_from(current_stream_url())
     if not host:
