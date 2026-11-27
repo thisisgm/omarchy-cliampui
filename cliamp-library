@@ -297,8 +297,11 @@ BROWSE_LIMIT = 2000
 SEARCH_LIMIT = 50
 # A station search returns hundreds of matches for any genre word, so it is capped hard.
 RADIO_LIMIT = 10
-# local playlists already reach the panel through `cliamp playlist list`.
-BROWSE_SKIP = ("local", "radio", "podcast", "cliamp")
+# Left out of browsing: local playlists already reach the panel through `cliamp playlist
+# list`; radio is the whole station directory, reached through search instead; podcast
+# lists nothing until something is subscribed. The cliamp source is browsed: it is
+# cliamp's own curated streams (Lofi, Synthwave, Chiptunes, ...).
+BROWSE_SKIP = ("local", "radio", "podcast")
 
 # Search results hand back whole track objects whose paths can hold a server API key.
 # Playing one needs the object back, so it is parked here, owner only, and the panel is
