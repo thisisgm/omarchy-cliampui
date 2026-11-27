@@ -288,8 +288,10 @@ def safe_name(name):
 # path never sees a token beyond the stream URLs a search result already carries, and
 # those are kept off argv (see TRACK_CACHE).
 
-# cliamp serves at most 200 rows a page (a larger limit is clamped, oddly to 100 for
-# albums), so listings are paged up to a ceiling that keeps the panel responsive.
+# Each provider clamps the page size to its own maximum (measured: Jellyfin serves 200,
+# but 100 when asked for 500; Tidal favourite albums stop at 100), so the size asked
+# for says nothing about the size served. Listings are paged up to a ceiling that
+# keeps the panel responsive.
 PAGE_SIZE = 200
 BROWSE_LIMIT = 2000
 SEARCH_LIMIT = 50
@@ -355,17 +357,25 @@ def parallel(fn, items):
 
 
 def paged(operation, field, provider):
-    """Every row of a listing. total is the real count for playlists but only the page
-    length for albums, so a short page is what ends the walk."""
-    out = []
+    """Every row of a listing. A short page is not the end, since the provider may have
+    clamped it, so the walk ends on an empty page. total ends it sooner where it is a
+    real count (playlists); for albums it is only the page length, which proves nothing."""
+    out, seen = [], set()
     while len(out) < BROWSE_LIMIT:
         result = remote(operation, provider=provider, offset=len(out), limit=PAGE_SIZE) or {}
         page = result.get(field) or []
+        if not page:
+            break
+        # A provider that ignores offset would hand back the same page for ever.
+        first = str(page[0].get("id") or "")
+        if first and first in seen:
+            break
+        seen.update(str(row.get("id") or "") for row in page)
         out.extend(page)
         total = result.get("total") or 0
-        if len(page) < PAGE_SIZE or (total > len(page) and len(out) >= total):
+        if total > len(page) and len(out) >= total:
             break
-    return out
+    return out[:BROWSE_LIMIT]
 
 
 def provider_playlist_rows(p):
@@ -496,8 +506,27 @@ def write_private(path, value):
     os.replace(tmp, path)
 
 
+# Both caches are merged rather than replaced. A search finishing while a play-track
+# helper is still starting would otherwise drop the very track that was just picked.
+# Newest entries win, and the oldest are shed past the bound, so neither file grows
+# without limit across a long session.
+TRACK_CACHE_MAX = 1000
+ROW_INDEX_MAX = 5000
+
+
+def merge_bounded(path, fresh, bound):
+    merged = read_json(path)
+    for key, value in fresh.items():
+        # Re-inserted so a key seen again counts as new, which is what keeps it.
+        merged.pop(key, None)
+        merged[key] = value
+    if len(merged) > bound:
+        merged = dict(list(merged.items())[-bound:])
+    write_private(path, merged)
+
+
 def save_tracks(tracks):
-    write_private(TRACK_CACHE, tracks)
+    merge_bounded(TRACK_CACHE, tracks, TRACK_CACHE_MAX)
 
 
 def read_json(path):
@@ -510,10 +539,7 @@ def read_json(path):
 
 def remember_rows(rows):
     """Merged into the existing index, so a search does not forget the browse list."""
-    index = read_json(ROW_INDEX)
-    for r in rows:
-        index[r["id"]] = [r["provider"], r["kind"]]
-    write_private(ROW_INDEX, index)
+    merge_bounded(ROW_INDEX, {r["id"]: [r["provider"], r["kind"]] for r in rows}, ROW_INDEX_MAX)
 
 
 def emit(rows):
