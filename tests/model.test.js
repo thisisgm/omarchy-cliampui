@@ -3,7 +3,7 @@
 
 const source = Deno.readTextFileSync(new URL("../Model.js", import.meta.url))
 const Model = new Function(
-  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, jellyfinArtUrlFromPath, tidalTrackId, urlOrigin, v2Request, v2JobRequest, fromV2, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
+  source + "; return { defaultStatus, parseStatus, rateFromNodeProps, sinkRateFromPactl, parseSinkAvailability, parsePlaylists, parseResults, matchPlaylists, messageKind, ackError, asBool, parseLyrics, activeLyricIndex, latencyMs, isSupportedOutputRate, parseBands, coverArtUrlFromStreamPath, jellyfinArtUrlFromPath, tidalTrackId, urlOrigin, v2Request, v2JobRequest, fromV2, groupResults, playableCount, toggledSource, isSourceRow, transcodedFromPath, bluetoothCodecLabel, verdict, formatTime, elideError, MAX_ERROR_CHARS }"
 )()
 
 let failures = 0
@@ -384,6 +384,39 @@ check("a finished verb is an ack",
 check("a failed verb carries its error",
   Model.ackError(Model.fromV2('{"version":2,"ok":true,"job":{"id":"j3","operation":"load","state":"failed","error":{"message":"operation failed","detail":"playlist not found"}}}').text),
   "playlist not found")
+
+// Grouping by source. Rows in list order, local first, as Service builds them.
+const localRow = { kind: "playlist", id: "Favorites", name: "Favorites" }
+const jfA = { kind: "playlist", provider: "jellyfin", providerName: "Jellyfin", id: "j1", name: "Album One" }
+const jfB = { kind: "playlist", provider: "jellyfin", providerName: "Jellyfin", id: "j2", name: "Album Two" }
+const tdA = { kind: "album", provider: "tidal", providerName: "Tidal", id: "t1", name: "Album Three" }
+const mixedSources = [localRow, jfA, jfB, tdA]
+const names = function (rows) { return rows.map(function (r) { return r.kind + ":" + r.name }) }
+
+check("a browse starts with every folder closed", names(Model.groupResults(mixedSources, {}, "")),
+  ["playlist:Favorites", "source:Jellyfin", "source:Tidal"])
+check("an open folder shows its rows beneath it", names(Model.groupResults(mixedSources, { tidal: true }, "")),
+  ["playlist:Favorites", "source:Jellyfin", "source:Tidal", "album:Album Three"])
+const folder = Model.groupResults(mixedSources, {}, "")[1]
+check("a folder carries its source and size", [folder.source, folder.songCount, folder.expanded, folder.collapsible], ["jellyfin", 2, false, true])
+check("a folder is a source row", Model.isSourceRow(folder), true)
+check("a playlist is not", Model.isSourceRow(localRow), false)
+const searched = Model.groupResults(mixedSources, {}, "album")
+check("a search shows every folder open", names(searched),
+  ["playlist:Favorites", "source:Jellyfin", "playlist:Album One", "playlist:Album Two", "source:Tidal", "album:Album Three"])
+check("a search heading does not fold", searched[1].collapsible, false)
+check("rows under a folder are marked", searched[2].inGroup, true)
+check("the marking never touches the input row", jfA.inGroup, undefined)
+check("a single source needs no folder", names(Model.groupResults([localRow, jfA, jfB], {}, "")),
+  ["playlist:Favorites", "playlist:Album One", "playlist:Album Two"])
+check("rows with no source stay flat", names(Model.groupResults([localRow], {}, "")), ["playlist:Favorites"])
+check("nothing groups to nothing", Model.groupResults(null, {}, ""), [])
+check("the count ignores folders", Model.playableCount(Model.groupResults(mixedSources, {}, "")), 1)
+check("and counts every row given it", Model.playableCount(mixedSources), 4)
+const opened = Model.toggledSource({}, "tidal")
+check("a toggle opens", opened, { tidal: true })
+check("a toggle closes", Model.toggledSource(opened, "tidal"), { tidal: false })
+check("a toggle makes a new object", Model.toggledSource(opened, "jellyfin") !== opened, true)
 
 console.log(failures === 0 ? "all model tests passed" : failures + " failing")
 if (failures > 0) Deno.exit(1)

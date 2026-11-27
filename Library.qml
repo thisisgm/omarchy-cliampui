@@ -28,6 +28,7 @@ Column {
 
   readonly property color dim: Qt.darker(foreground, 1.45)
   readonly property var results: service ? service.results : []
+  readonly property int resultCount: service ? service.resultCount : 0
   readonly property bool cliampRunning: !!(service && service.running)
 
   // A search can return a hundred rows, which is taller than the whole panel. Capping
@@ -60,8 +61,9 @@ Column {
     Text {
       id: countLabel
       textFormat: Text.PlainText
-      text: root.results.length > 0
-        ? root.results.length + (root.results.length === 1 ? " RESULT" : " RESULTS")
+      // Counts what can be played, so opening or closing a folder leaves it alone.
+      text: root.resultCount > 0
+        ? root.resultCount + (root.resultCount === 1 ? " RESULT" : " RESULTS")
         : ""
       color: Qt.darker(root.foreground, 1.4)
       font.family: root.fontFamily
@@ -178,6 +180,9 @@ Column {
         required property var modelData
         required property int index
 
+        // A source folder: activating it opens or closes the rows beneath it.
+        readonly property bool isSource: modelData.kind === "source"
+
         width: albumList.width
         foreground: root.foreground
         hasCursor: index === root.cursorIndex
@@ -194,7 +199,8 @@ Column {
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
-          anchors.leftMargin: Style.space(10)
+          // Rows inside a folder sit in from it, so the folder reads as their parent.
+          anchors.leftMargin: Style.space(modelData.inGroup ? 22 : 10)
           anchors.rightMargin: Style.space(10)
           spacing: Style.space(8)
 
@@ -202,22 +208,38 @@ Column {
             id: albumLabel
             textFormat: Text.PlainText
             Layout.fillWidth: true
-            text: (modelData.artist ? modelData.artist + " · " : "") + modelData.name
+            text: isSource
+              ? modelData.name
+              : (modelData.artist ? modelData.artist + " · " : "") + modelData.name
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+            font.bold: isSource
             elide: Text.ElideRight
           }
 
-          // The kind is the load-bearing detail once one list mixes three of them.
+          // The kind is the load-bearing detail once one list mixes three of them. Inside a
+          // folder the source is already said above, so only the kind remains.
           Text {
             textFormat: Text.PlainText
-            text: ((modelData.providerName ? modelData.providerName + " · " : "")
-              + String(modelData.kind || "")).toUpperCase()
+            text: isSource
+              ? String(modelData.songCount)
+              : ((modelData.providerName && !modelData.inGroup ? modelData.providerName + " · " : "")
+                + String(modelData.kind || "")).toUpperCase()
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             font.letterSpacing: 1.2
+          }
+
+          // Only a folder that can fold shows which way it is; a search heading cannot.
+          Text {
+            textFormat: Text.PlainText
+            visible: isSource && modelData.collapsible === true
+            text: modelData.expanded ? "⌄" : "›"
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
           }
         }
       }

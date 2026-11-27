@@ -728,8 +728,23 @@ Item {
 
   readonly property string libraryHelper: String(Qt.resolvedUrl("cliamp-library")).replace("file://", "")
 
+  // Which source folders are open. Held for the life of the shell, so a folder stays as
+  // it was left across panel opens; every folder starts closed.
+  property var expandedSources: ({})
+
+  // Every playable row, folded folders included, for the count in the header.
+  property int resultCount: 0
+
   function _recomputeResults() {
-    results = Model.matchPlaylists(playlists, libraryQuery).concat(_libraryRows)
+    var rows = Model.matchPlaylists(playlists, libraryQuery).concat(_libraryRows)
+    resultCount = Model.playableCount(rows)
+    results = Model.groupResults(rows, expandedSources, libraryQuery)
+  }
+
+  function toggleSource(source) {
+    if (!source) return
+    expandedSources = Model.toggledSource(expandedSources, String(source))
+    _recomputeResults()
   }
 
   // The query this helper run was dispatched for, so a keystroke that arrives while
@@ -759,6 +774,11 @@ Item {
 
   function playResult(item) {
     if (!item) return
+    // A folder plays nothing. In a search it is only a heading, so it stays open.
+    if (Model.isSourceRow(item)) {
+      if (item.collapsible) toggleSource(item.source)
+      return
+    }
     // A playlist with no provider is a local one from `cliamp playlist list`.
     if (item.kind === "playlist" && !item.provider) { loadPlaylist(String(item.name)); return }
     if (albumPlayProcess.running || !item.id) return

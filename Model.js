@@ -521,6 +521,89 @@ function matchPlaylists(playlists, query) {
   return out
 }
 
+// ---- grouping the library by source ----
+
+// A folder row. It plays nothing: activating it opens or closes its source.
+var SOURCE_KIND = "source"
+
+// Sample input, rows as parseResults and matchPlaylists build them, in list order:
+//   [{kind:"playlist",name:"Favorites"}, {kind:"album",provider:"tidal",providerName:"Tidal",..}, ..]
+// Rows without a provider (local playlists, Subsonic rows) stay at the top, ungrouped.
+// The rest are gathered under one folder row per provider, in the order the providers
+// first appear. A browse shows only the folders named in `expanded`; a search shows
+// every folder open, as a heading that does not collapse, so a match is never hidden
+// behind a click. With a single provider there is nothing to tell apart, so no folder.
+function groupResults(rows, expanded, query) {
+  var list = rows && rows.length !== undefined ? rows : []
+  var open = expanded && typeof expanded === "object" ? expanded : {}
+  var searching = trim(query).length > 0
+
+  var out = []
+  var order = []
+  var groups = {}
+  for (var i = 0; i < list.length; i++) {
+    var row = list[i]
+    if (!row) continue
+    var key = String(row.provider || "")
+    if (key.length === 0) { out.push(row); continue }
+    if (!groups[key]) {
+      groups[key] = { name: String(row.providerName || key), rows: [] }
+      order.push(key)
+    }
+    groups[key].rows.push(row)
+  }
+
+  if (order.length === 1) return out.concat(groups[order[0]].rows)
+
+  for (var j = 0; j < order.length; j++) {
+    var source = order[j]
+    var group = groups[source]
+    var shown = searching || open[source] === true
+    out.push({
+      kind: SOURCE_KIND,
+      id: source,
+      source: source,
+      name: group.name,
+      artist: "",
+      album: "",
+      songCount: group.rows.length,
+      duration: 0,
+      expanded: shown,
+      collapsible: !searching
+    })
+    if (!shown) continue
+    for (var k = 0; k < group.rows.length; k++) {
+      // Copied, so the flag never leaks into the rows a later regroup starts from.
+      var child = {}
+      for (var field in group.rows[k]) child[field] = group.rows[k][field]
+      child.inGroup = true
+      out.push(child)
+    }
+  }
+  return out
+}
+
+function isSourceRow(row) {
+  return !!(row && row.kind === SOURCE_KIND)
+}
+
+// What can be played, folded folders included, so the count does not change on a click.
+function playableCount(rows) {
+  var list = rows && rows.length !== undefined ? rows : []
+  var count = 0
+  for (var i = 0; i < list.length; i++) if (list[i] && list[i].kind !== SOURCE_KIND) count++
+  return count
+}
+
+// A folder's state toggled, as a new object so a QML var property notices the change.
+function toggledSource(expanded, source) {
+  var next = {}
+  var current = expanded && typeof expanded === "object" ? expanded : {}
+  for (var key in current) next[key] = current[key]
+  next[source] = !(current[source] === true)
+  return next
+}
+
 function trim(text) {
   return String(text || "").replace(/^\s+/, "").replace(/\s+$/, "")
 }
